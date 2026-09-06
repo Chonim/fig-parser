@@ -389,23 +389,26 @@ function nestByContainment(kids) {
   // eligibility is decided up front: adopting one child must not stop a box from
   // taking the next, which is how a button loses its icon after gaining its label
   const containers = new Set(kids.filter(isContainer));
-  const adopted = new Set();
+  const adoptedBy = new Map();
   for (let i = 0; i < kids.length; i++) {
     const child = kids[i];
-    if (child.role === 'backdrop' || adopted.has(child)) continue;
+    if (child.role === 'backdrop' || adoptedBy.has(child)) continue;
     // only shapes drawn earlier can sit behind this one
     const host = kids
       .slice(0, i)
-      .filter((c) => containers.has(c) && !adopted.has(c) && encloses(c, child) && area(c) > area(child))
+      .filter((c) => containers.has(c) && !adoptedBy.has(c) && encloses(c, child) && area(c) > area(child))
       // adoption moves the child up in paint order; that is only safe when nothing
-      // drawn between the two overlaps it, or the sibling in between jumps on top
-      .filter((c) => !kids.slice(kids.indexOf(c) + 1, i).some((between) => overlaps(between, child)))
+      // drawn between the two overlaps it. A sibling bound for the same host does
+      // not count — the two move together and keep their order.
+      .filter((c) => !kids
+        .slice(kids.indexOf(c) + 1, i)
+        .some((between) => adoptedBy.get(between) !== c && overlaps(between, child)))
       .sort((a, b) => area(a) - area(b))[0];
     if (!host) continue;
     host.children.push({ ...child, box: { ...child.box, x: round(child.box.x - host.box.x), y: round(child.box.y - host.box.y) } });
-    adopted.add(child);
+    adoptedBy.set(child, host);
   }
-  return adopted.size ? kids.filter((k) => !adopted.has(k)) : kids;
+  return adoptedBy.size ? kids.filter((k) => !adoptedBy.has(k)) : kids;
 }
 
 /**

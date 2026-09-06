@@ -175,6 +175,14 @@ const html = renderHTML(ir);
 assert.ok(html.includes('<svg'), 'no inline svg');
 assert.ok(html.includes('로그인'), 'text content lost');
 assert.equal((html.match(/position: absolute;\n  position: relative;/g) ?? []).length, 0, 'conflicting position rules');
+// a class starting with a digit is not a valid CSS identifier: the rule is parsed
+// away and every declaration for that node silently disappears
+for (const frame of canvas.children.filter((c) => c.type === 'FRAME')) {
+  const page = renderHTML(toIR(frame, message.blobs));
+  const bad = [...page.matchAll(/^\.([^\s{]+)/gm)].map((m) => m[1]).filter((c) => /^[0-9-]/.test(c));
+  assert.equal(bad.length, 0, `invalid CSS class selectors in ${frame.name}: ${bad.slice(0, 3)}`);
+}
+
 const openDivs = (html.match(/<div/g) ?? []).length;
 assert.equal(openDivs, (html.match(/<\/div>/g) ?? []).length, 'unbalanced divs');
 

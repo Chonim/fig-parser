@@ -35,9 +35,12 @@ function className(node, seen) {
     .replace(/[^\w가-힣-]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .toLowerCase() || node.role;
-  const n = (seen.get(base) ?? 0) + 1;
-  seen.set(base, n);
-  return n === 1 ? base : `${base}-${n}`;
+  // a CSS identifier may not start with a digit: `.2026-01-01` silently matches
+  // nothing, and every rule written for that node is dropped
+  const safe = /^[a-z_\u00a0-\uffff]/i.test(base) ? base : `n${base}`;
+  const n = (seen.get(safe) ?? 0) + 1;
+  seen.set(safe, n);
+  return n === 1 ? safe : `${safe}-${n}`;
 }
 
 function boxRules(node, parentLayout) {
