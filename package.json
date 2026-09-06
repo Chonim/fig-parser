@@ -5,7 +5,8 @@
     "test": "node src/parse.test.mjs && node src/components.test.mjs && node src/mcp.test.mjs",
     "mcp": "node src/mcp.mjs",
     "census": "node src/census.mjs",
-    "reach": "node src/reach.mjs"
+    "reach": "node src/reach.mjs",
+    "diff": "node src/diff.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -15,5 +16,9 @@
   },
   "bin": {
     "fig-parser-mcp": "src/mcp.mjs"
+  },
+  "devDependencies": {
+    "pixelmatch": "^7.2.0",
+    "pngjs": "^7.0.0"
   }
 }
