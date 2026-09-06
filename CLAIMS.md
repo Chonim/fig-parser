@@ -97,26 +97,29 @@ README:92–103 표와 `src/mcp.mjs`의 `describe()` 문자열. **모델이 읽�
 
 ## E. 수치
 
-문서에 두 자리 이상 숫자가 든 줄이 143개다. 그중 **명령이나 파일에서 다시 계산할 수 있는 것**만
-대조 대상이다. 3-2에서 수치마다 측정 키를 붙이는 규약을 정하고 문서를 거기 맞춘다.
+문서에 두 자리 이상 숫자가 든 줄이 143개다. 산문에서 숫자를 긁으면 오탐이 나오므로
+(깊이 히스토그램이 프레임 id로 읽히고, 고쳐진 결함의 서술이 현재 수치로 읽힌다)
+**대조할 수치에는 `fig:key=value` 마커를 붙인다.** 지금 30개가 붙어 있고 `pnpm docs:check`가
+매번 다시 계산한다. 총계는 census에서, 도그푸딩 호출 수는 dogfood에서 읽는다 — 두 번 세면
+어긋난다(처음 시도에서 211 차이).
 
 | # | 수치 | 출처 | 담당 | 상태 |
 | --- | --- | --- | --- | --- |
-| E1 | kyowon 4013 raw → 1353 IR | `pnpm census` | 3-2 | 미검증 |
-| E2 | matsq 5737 raw → 4442 IR | `pnpm census` | 3-2 | 미검증 |
-| E3 | 그룹 521개(kyowon) | 파일 실측 | 3-2 | 미검증 |
-| E4 | 파생 항목 2336건 / 인스턴스 947개 | 파일 실측 | 3-2 | 미검증 |
-| E5 | auto-layout 상자 1337개 | IR 실측 | 3-2 | 미검증 |
-| E6 | `layout.overflow` 28개 | `pnpm census` | 3-2 | 미검증 |
-| E7 | CENTER 스트로크 111개(전부 1px) | IR 실측 | 3-2 | 미검증 |
-| E8 | `hug.cross` 898개 | IR 실측 | 3-2 | 미검증 |
-| E9 | 다중 guid 경로 555건 | 파일 실측 | 3-2 | 미검증 |
-| E10 | 도달률 kyowon 87/211·794/1353 | `pnpm reach` | 3-2 | 미검증 |
-| E11 | 도달률 matsq 906/1616·2708/4442 | `pnpm reach` | 3-2 | 미검증 |
-| E12 | 도그푸딩 31 → 1 호출 | `pnpm dogfood` | 3-2 | 미검증 |
-| E13 | 로그인 프레임 22 IR 노드 / 102 raw / 로고 63 path | IR 실측 | 3-2 | 미검증 |
-| E14 | 런타임 의존성 4개 | `package.json` | 3-2 | 미검증 |
-| E15 | 예산 30KB | `src/mcp.mjs` | 3-2 | 미검증 |
+| E1 | kyowon 4013 raw → 1353 IR | `pnpm census` | 3-2 | 검증(docs.test: fig 마커 대조) |
+| E2 | matsq 5737 raw → 4442 IR | `pnpm census` | 3-2 | 검증(docs.test: fig 마커 대조) |
+| E3 | 그룹 521개(kyowon) | 파일 실측 | 3-2 | 검증(docs.test: fig 마커 대조) |
+| E4 | 파생 항목 2336건 / 인스턴스 947개 | 파일 실측 | 3-2 | 검증(docs.test: fig 마커 대조) |
+| E5 | auto-layout 상자 1337개 | IR 실측 | 3-2 | 검증(docs.test: fig 마커 대조) |
+| E6 | `layout.overflow` 28개 | `pnpm census` | 3-2 | 검증(docs.test: fig 마커 대조) |
+| E7 | CENTER 스트로크 111개(전부 1px) | IR 실측 | 3-2 | 검증(docs.test: fig 마커 대조) |
+| E8 | `hug.cross` 898개 | IR 실측 | 3-2 | 검증(docs.test: fig 마커 대조) |
+| E9 | 다중 guid 경로 555건 | 파일 실측 | 3-2 | 검증(docs.test: fig 마커 대조) |
+| E10 | 도달률 kyowon 87/211·794/1353 | `pnpm reach` | 3-2 | 검증(docs.test: fig 마커 대조) |
+| E11 | 도달률 matsq 906/1616·2708/4442 | `pnpm reach` | 3-2 | 검증(docs.test: fig 마커 대조) |
+| E12 | 도그푸딩 31 → 1 호출 | `pnpm dogfood` | 3-2 | 검증(docs.test: fig 마커 대조) |
+| E13 | 로그인 프레임 22 IR 노드 / 102 raw / 로고 63 path | IR 실측 | 3-2 | 검증(docs.test: fig 마커 대조) |
+| E14 | 런타임 의존성 4개 | `package.json` | 3-2 | 검증(docs.test: fig 마커 대조) |
+| E15 | 예산 30KB | `src/mcp.mjs` | 3-2 | 검증(docs.test: fig 마커 대조) |
 
 ## F. 파일 경로
 

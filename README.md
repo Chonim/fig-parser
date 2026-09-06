@@ -5,13 +5,13 @@ from — over MCP, with no Figma account, no API key, and no desktop app running
 
 ## Why
 
-A `.fig` file arrives as one flat list — 4050 nodes in the smaller of the two files here, with
+A `.fig` file arrives as one flat list — 4013 nodes under the frames of the smaller file here <!-- fig:kyowon.raw=4013 -->, with
 no nesting left in it. Handing that to a model is why "convert this design to code" tends to
 produce absolute-positioned soup. Parsing the file was never the hard part; turning it into
 something worth reading is.
 
-The 1440×960 login screen in that file is 102 of those nodes. fig-parser gives it back as
-**22 IR nodes**: a 63-path logo becomes one `<svg>`, the full-bleed art becomes a backdrop,
+The 1440×960 login screen in that file is 102 of those nodes <!-- fig:login.raw=102 -->. fig-parser gives it
+back as **22 IR nodes** <!-- fig:login.ir=22 -->: a 63-path logo <!-- fig:login.logo.paths=63 --> becomes one `<svg>`, the full-bleed art becomes a backdrop,
 repeated cards are labelled as a list, and colours come back under the names the design system
 gave them.
 
@@ -24,7 +24,7 @@ local editors I tried could not be customised or bent toward markup output.
 pnpm install
 ```
 
-Node 20+. No build step — plain ESM, four runtime dependencies (`pixelmatch` and `pngjs` are
+Node 20+. No build step — plain ESM, four runtime dependencies <!-- fig:deps.runtime=4 --> (`pixelmatch` and `pngjs` are
 dev-only, for the pixel diff).
 
 ## Commands
@@ -82,7 +82,8 @@ them, so they are treated as untrusted.
 Large frames come back truncated with a stub naming the id to pass back as `select`, so nothing
 becomes unreachable and nothing blows the context window. `find_nodes` turns a string into that
 id in one call — learning all 48 strings in one design-system frame took 31 calls of drilling
-and takes one of searching (`pnpm dogfood` re-runs that comparison).
+and takes one of searching <!-- fig:dogfood.drilling=31 fig:dogfood.searching=1 --> (`pnpm dogfood`
+re-runs that comparison).
 
 `pnpm reach` says how much of each frame a single call delivers, so a change to the budget
 shows up as a number rather than as quietly less of the design arriving.
@@ -149,7 +150,7 @@ the things that make markup writable:
 - `layout.rows` — which children share a visual row, as indices into that node's own
   `children`. Siblings arrive in paint order, which is not reading order.
 - `layout.overflow` — `{ axis, needs, has }` where the design forced an auto-layout box
-  narrower than its own contents (28 of the design-system file's 1337). Figma neither shrinks
+  narrower than its own contents (28 of the design-system file's 1337 <!-- fig:matsq.overflow=28 fig:matsq.autolayout=1337 -->). Figma neither shrinks
   the children nor clips them, so they run past the edge and the next sibling paints over them.
   Better to know than to copy a width the content breaks.
 - `label` — the text a painted box contains, when it contains exactly one: a button,

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { workedPass, START, END } from './worked-pass.mjs';
 import { BOTH, requireSamples } from './samples.mjs';
+import { check } from './docs-check.mjs';
 
 requireSamples(BOTH);
 
@@ -38,6 +39,21 @@ if (!existsSync('refs')) {
 }
 assert.match(readFileSync('.gitignore', 'utf8'), /^samples\/\*\.fig$/m, 'the samples are no longer gitignored');
 
+// --- the figures the documents name, recomputed ---
+// Scraping numbers out of prose finds false positives, so a figure meant to be checked
+// carries a `fig:key=value` marker and docs-check.mjs measures the key. Totals come
+// from census and the dogfood counts from dogfood, rather than being counted a second
+// time here — two implementations of "how many nodes is this" disagreed by 211 on the
+// first attempt.
+const { claims, wrong, unknown } = await check();
+assert.ok(claims.length >= 25, `only ${claims.length} figures in the documents are marked for checking`);
+assert.deepEqual(unknown.map((u) => `${u.doc}:${u.line} fig:${u.key}`), [], 'a document marks a figure nothing measures');
+assert.deepEqual(
+  wrong.map((w) => `${w.doc}:${w.line} fig:${w.key} says ${w.said}, is ${w.is}`),
+  [],
+  'a document states a figure that is no longer true',
+);
+
 // --- every command skips when the samples are not there ---
 // The documents promise it and dogfood did not do it. Rather than moving the files,
 // the sample directory is pointed at an empty one, which is what the entry points read.
@@ -63,4 +79,4 @@ for (const [cmd, ...args] of COMMANDS) {
 }
 rmSync(empty, { recursive: true, force: true });
 
-console.log(`ok — worked pass matches, ${inREADME.split('\n').length} generated lines, ${COMMANDS.length} commands skip cleanly`);
+console.log(`ok — worked pass matches, ${claims.length} figures re-derived, ${COMMANDS.length} commands skip cleanly`);

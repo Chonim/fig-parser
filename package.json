@@ -8,7 +8,8 @@
     "reach": "node src/reach.mjs",
     "diff": "node src/diff.mjs",
     "dogfood": "node src/dogfood.mjs",
-    "docs:worked": "node src/worked-pass.mjs --write"
+    "docs:worked": "node src/worked-pass.mjs --write",
+    "docs:check": "node src/docs-check.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

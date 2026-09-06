@@ -47,8 +47,8 @@ pnpm census    # 기본 kyowon-full, 인자로 다른 .fig 지정 가능
 (raw = 프레임 아래에서 실제로 도달하는 노드. 위의 4050 / 7219는 마스터·페이지·변수까지 포함한 `nodeChanges` 전체다.)
 
 ```
-kyowon-full  12 프레임  4013 raw = 1353 IR + 2647 아이콘 병합 + 2 마스크 + 11 비표시
-matsq        97 프레임  5737 raw = 4442 IR +  678 아이콘 병합 + 0 마스크 + 617 비표시
+kyowon-full  12 프레임  4013 raw = 1353 IR + 2647 아이콘 병합 + 2 마스크 + 11 비표시   fig:kyowon.raw=4013 fig:kyowon.ir=1353 fig:kyowon.frames=12
+matsq        97 프레임  5737 raw = 4442 IR +  678 아이콘 병합 + 0 마스크 + 617 비표시   fig:matsq.raw=5737 fig:matsq.ir=4442 fig:matsq.frames=97
 ```
 
 census에 남은 행은 둘 다 의도적이다: 벡터 네트워크 blob(참조 0건 확인), 비표시 노드,
@@ -71,10 +71,11 @@ census에 남은 행은 둘 다 의도적이다: 벡터 네트워크 blob(참조
 
 - **constraints를 CSS로** — IR에 사실로 싣는다(matsq 노드 164개, CENTER 271축 / MAX 18축).
   CSS로 바꾸면 위치가 움직이는데, 그 결과가 맞는지 확인할 방법이 이 파일들에는 없다
-- **`layout.hug`으로 크기 풀기** — 시도했다가 되돌렸다. `fit-content`로 풀면
-  Textarea Field의 다중행 입력창이 100px → 48px로 붕괴한다. Figma가 확정한 크기가
-  콘텐츠 크기보다 큰 경우를 CSS가 재현하지 못한다.
-  다시 시도한다면 hug 축에 `min-width`/`min-height`로 측정값을 깔고 크기를 푸는 방향
+- ~~**`layout.hug`으로 크기 풀기**~~ — **했다(3-2).** `fit-content`로 풀었을 때
+  Textarea가 80px에서 콘텐츠 크기로 붕괴한 게 되돌린 이유였고, 이번엔 Figma 측정값을
+  크기로 두되 **천장이 아니라 바닥**으로 만들었다(row면 `min-height`, column이면 `min-width`).
+  디자인 크기에서는 아무것도 안 움직이고, 긴 문자열이나 넓은 폰트면 상자가 넘치는 대신 커진다.
+  matsq에서 cross 축을 hug하는 상자 898개 <!-- fig:matsq.hug.cross=898 -->
 - **`role: 'button'`** — 근거는 이제 있다(matsq에 ON_CLICK 103건, `label` 607건).
   그래도 "이건 버튼이다"라고 단정하지 않고 사실만 싣는다. 어떤 요소를 쓸지는 읽는 쪽의 판단이다
 
@@ -85,13 +86,14 @@ census에 남은 행은 둘 다 의도적이다: 벡터 네트워크 blob(참조
   결과가 맞는지 볼 방법이 없어 보류 중이다. 둘 다 위치를 움직이는 변경이라 눈대중으로
   넣을 수 없다
 - **`get_frame` 도달률** — `pnpm reach`가 재는 값. 한 번 호출로 kyowon 텍스트 87/211
-  노드 794/1353, matsq 텍스트 906/1616 노드 2708/4442. 예산 30KB인 한 큰 프레임을 다 담을 수
+  노드 794/1353, matsq 텍스트 906/1616 노드 2708/4442.
+  <!-- fig:kyowon.reach.text=87/211 fig:kyowon.reach.nodes=794/1353 fig:matsq.reach.text=906/1616 fig:matsq.reach.nodes=2708/4442 fig:matsq.slack=0 --> 예산 30KB인 한 큰 프레임을 다 담을 수
   없고 나머지는 `select`나 `find_nodes`로 도달한다. 예산 절반도 못 쓰는 프레임은 이제 0
 - **`FONT_STYLE` 변수 바인딩** — matsq의 139건 전부가 외부 라이브러리를 가리켜 해석 불가
 - **`STICKY` `WIDGET` `CONNECTOR` `SHAPE_WITH_TEXT` `STAMP`** — matsq에 소량.
   주석·다이어그램용이라 마크업 대상이 아니다
 - **`strokeAlign: CENTER`** — CSS에 반쪽 걸친 테두리가 없어 INSIDE로 근사.
-  **"1개뿐"이라고 적었던 건 틀렸다.** 다시 세니 kyowon 1 + matsq 110 = **111개**이고,
+  **"1개뿐"이라고 적었던 건 틀렸다.** 다시 세니 kyowon 1 + matsq 110 = **111개** <!-- fig:centred.strokes=111 -->이고,
   그때는 인스턴스 확장이 지금과 달라 대부분이 IR에 올라오지 않았다.
 
   그래도 지금은 넣지 않는다. 111개가 **전부 1px** 스트로크라 INSIDE와의 차이가 한쪽
@@ -130,7 +132,7 @@ TILE은 `background-repeat: repeat`로, truncation은 line-clamp로 이미 처�
 
 디자이너가 고정 크기 인스턴스를 내용보다 좁게 눌러놓은 자리. Figma도 자식을 줄이지
 않고 클립도 안 해서 밖으로 흘러넘치고, 뒤에 그려지는 형제가 덮는다. matsq 1337개
-auto-layout 상자 중 **28개**, kyowon은 auto-layout 자체가 없어 0.
+auto-layout 상자 중 **28개** <!-- fig:matsq.overflow=28 fig:matsq.autolayout=1337 -->, kyowon은 auto-layout 자체가 없어 0.
 
 판정은 **자식들이 실제로 놓인 오른쪽/아래 끝**으로 한다. 항목 크기를 더하는 방식은
 Figma가 채움 라벨을 내용 상자 전체에 깔고 그 양끝에 아이콘을 겹쳐 그리는 컴포넌트에서
@@ -173,7 +175,7 @@ radial 그라디언트도, 다중 fill도, TILE도 이 파일엔 없다 — 위 
 
 ## `derivedSymbolData` — 경로 규칙 (전수 조사 완료)
 
-인스턴스마다 Figma가 **다시 계산한 결과**가 들어 있다. matsq에 947 인스턴스 2336건,
+인스턴스마다 Figma가 **다시 계산한 결과**가 들어 있다. matsq에 947 인스턴스 2336건 <!-- fig:matsq.derived.instances=947 fig:matsq.derived.entries=2336 -->,
 kyowon엔 0건. 지금은 통째로 무시하고 마스터 좌표를 그대로 쓴다.
 
 ### `guidPath.guids`가 가리키는 것
@@ -215,7 +217,7 @@ kyowon엔 0건. 지금은 통째로 무시하고 마스터 좌표를 그대로 �
 
 ### 안 읽기로 한 것 — 경로가 2개 이상인 555건 (시도했다 되돌림)
 
-전체 2336건 중 555건(490+65)은 중첩 인스턴스 안쪽을 가리킨다. 555건 **전부** 첫 홉이
+전체 2336건 중 555건(490+65)은 중첩 인스턴스 안쪽을 가리킨다 <!-- fig:matsq.derived.nested=555 -->. 555건 **전부** 첫 홉이
 이 마스터 안의 INSTANCE라, 나머지 경로를 그 인스턴스 확장으로 내려보내면 될 것처럼 보인다.
 
 **해봤더니 화면이 나빠졌다.** GNB 셰브런의 transform이 `translate(4.67 6.83)`에서

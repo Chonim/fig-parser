@@ -52,7 +52,7 @@ archive: deflate-raw schema chunk, then a **zstd** message chunk (older parsers 
 for both and die here). `nodeChanges` is a flat list; `buildTree` reassembles it from
 `guid`/`parentIndex`. Path geometry lives in `message.blobs` as u8 opcode + float32 args.
 
-**ir.mjs** is where the value is, and where the subtlety is. It turns 4013 raw nodes into 1353
+**ir.mjs** is where the value is, and where the subtlety is. It turns 4013 raw nodes into 1353 <!-- fig:kyowon.raw=4013 fig:kyowon.ir=1353 -->
 IR nodes by collapsing vector clusters into single SVGs, folding masks into their parent,
 expanding instances against their master, rebuilding missing nesting from geometry, and
 inferring layout. `HANDLED` declares what this layer can express; `census.mjs` reads it rather
@@ -105,7 +105,7 @@ These are pinned by tests. A red suite is usually one of these, not new code.
    node's own `children`; two callers passing differently-filtered arrays made every index name
    the wrong node.
 9. **A group is a `FRAME` carrying `resizeToFit`.** There is no `GROUP` type in the format, so a
-   test on `node.type` alone treats all 521 of one file's groups as frames. Groups size themselves
+   test on `node.type` alone treats all 521 of one file's groups as frames <!-- fig:kyowon.groups=521 -->. Groups size themselves
    to their contents instead of cropping them: clipping them cut every OUTSIDE stroke, glow and
    shadow at the child's own edge — the tool buttons lost the right side of their white ring.
 10. **`textAutoResize` names axes Figma derives, and the box on them is a cache that is wrong in
