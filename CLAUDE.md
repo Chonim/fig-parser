@@ -16,7 +16,10 @@ protocol. Read it before starting anything.
 ```bash
 pnpm test                                    # parse + components + mcp suites, in that order
 node src/parse.test.mjs                      # one suite; there is no test framework, just assert
-pnpm census [file.fig]                       # what the IR layer still drops (default: kyowon-full)
+pnpm census [file.fig]                       # what the IR layer still drops (default: both samples' first)
+pnpm reach [file.fig]                        # how much of a frame one get_frame call delivers
+pnpm diff [file.fig]                         # pixel comparison against refs/<sample>/<frameId>.png
+pnpm dogfood                                 # the tool-call count find_nodes saves, measured
 node src/cli.mjs <file.fig>                  # list frames: id, name, size
 node src/cli.mjs <file.fig> <frame> <outDir> # render one frame to HTML + ir.json + assets
 pnpm mcp                                     # stdio MCP server (also wired in .mcp.json)
@@ -28,6 +31,11 @@ the skip into an exit 1, since a skip and a pass look identical to anything read
 
 - `samples/kyowon-full.fig` — a product design: no auto-layout, no components, heavy vector art
 - `samples/matsq.fig` — a design system: symbols, instances, auto-layout, variables, sections
+
+`refs/<sample>/<frameId>.png` holds Figma's own 2x export of a frame, and `pnpm diff` compares
+the render to it. `REFS.md` says which frames to export and why those. Nothing in this repo has
+ever been checked against Figma's actual output; every other check here agrees with the render
+it is looking at.
 
 The two exercise disjoint code paths. A change verified against one is not verified.
 
@@ -55,7 +63,15 @@ needs to know a 246×98 logo is present and can be exported. `fit` spends a 30KB
 of what costs least: path data first, then typography and paint, then whole nodes — content is
 the last thing to go, because a node that is not listed cannot be asked about while one listed
 without its font still carries its string. What it cannot fit becomes a stub naming the id to
-pass back as `select`. Both `depth` and `includePaths` bypass the budget.
+pass back as `select`, and `find_nodes` turns a string into that id in one call. Both `depth`
+and `includePaths` bypass the budget.
+
+The budget is spent by searching, not by estimating: `allot`'s cost model runs light, and the
+response it produces is **not monotonic** in the allowance it is given — skipping a node keeps
+its subtree out of the queue, so more room can admit one wide child that crowds out many cheap
+ones. `fit` walks allowances past the budget, scores each response by the strings it names then
+the nodes then its size, and tops the winner up node by node against the real serialized length.
+`pnpm reach` is the number that says whether any of that still works.
 
 `toIR(node, blobs, { symbols, variables })` — without `symbols` instances render as empty
 boxes, and without `variables` tokens get invented names instead of the authored ones. Every
@@ -98,11 +114,25 @@ These are pinned by tests. A red suite is usually one of these, not new code.
     `min-width`/`min-height: max-content` on the derived axes only stops the box being smaller
     than what it holds. Replacing it with `max-content` outright shrank one label 128px → 37px.
 
+11. **An instance carries Figma's recomputation of itself, in `derivedSymbolData`.** Each child's
+    size and transform after the copy was resized, and its strokes re-outlined at that size.
+    Without it every child sits at the master's measurements — a Button dragged from 124px to 74
+    kept a label 40px in and 44px wide, and ran off its own background. Inside one master a path
+    is a single guid whatever the node's depth; a longer path crosses into a nested instance and
+    belongs to that instance's own expansion. Keying by the last guid collides 126 times here.
+12. **Figma calling a frame auto-layout does not make it a flex row.** Where the children it
+    recomputed overlap on the main axis — a filling label with icons drawn over its ends — flex
+    would push them apart. The stack settings stay reported; the placement falls back to the
+    coordinates. 32 boxes in the design-system file.
+
 ## Working rules
 
 - **No rendering code a sample cannot check.** Radial gradients, stacked fills and wrap-grid
-  inference stay unimplemented because neither sample contains them. Constraints are reported as
-  fact but not applied, since nothing here can check the result. `TASKS.md` records the evidence.
+  inference stay unimplemented because neither sample contains them. Constraints and centred
+  stroke alignment are reported as fact but not applied: both move things on screen, and until
+  `refs/` has Figma's own export there is no way to see whether the result is right. The same
+  test held `derivedTextData` and the re-derived `fillGeometry` out — reading either changes not
+  one number in either sample. `TASKS.md` records each with its count.
 - **A negative needs a full scan before it is written down.** Two claims in these documents were
   false: constraints do appear in the design-system file (164 nodes), and so do 5077 resolvable
   variable bindings on radii, gaps, padding, border weights and type — both written down after

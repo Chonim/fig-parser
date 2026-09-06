@@ -64,7 +64,12 @@ them, so they are treated as untrusted.
 | `get_variables` | The design system's declared variables — sets, modes, aliases. Narrow with `set` or `frame`. |
 
 Large frames come back truncated with a stub naming the id to pass back as `select`, so nothing
-becomes unreachable and nothing blows the context window.
+becomes unreachable and nothing blows the context window. `find_nodes` turns a string into that
+id in one call — learning all 48 strings in one design-system frame took 31 calls of drilling
+and takes one of searching (`pnpm dogfood` re-runs that comparison).
+
+`pnpm reach` says how much of each frame a single call delivers, so a change to the budget
+shows up as a number rather than as quietly less of the design arriving.
 
 ## What the IR looks like
 
@@ -89,7 +94,7 @@ the things that make markup writable:
 - `layout.rows` — which children share a visual row, as indices into that node's own
   `children`. Siblings arrive in paint order, which is not reading order.
 - `layout.overflow` — `{ axis, needs, has }` where the design forced an auto-layout box
-  narrower than its own contents. Figma neither shrinks the children nor clips them, so
+  narrower than its own contents (28 of the design-system file's 1337). Figma neither shrinks the children nor clips them, so
   they run past the edge and the next sibling paints over them. Better to know than to
   copy a width the content breaks.
 - `label` — the text a painted box contains, when it contains exactly one: a button,
@@ -116,10 +121,12 @@ is the source artboard, and dividing by it shrinks icons to a sub-pixel speck.
 
 ## Limits
 
-Radial gradients, stacked fills and wrap-grid inference are unimplemented, and `layout.hug` does
-not relax the renderer's fixed sizes. Each is a deliberate stop rather than an oversight: none of
-the sample files exercises them, and untested rendering code is worse than an honest gap.
-Constraints are reported in the IR but not turned into CSS, for the same reason.
+Radial gradients, stacked fills and wrap-grid inference are unimplemented: none of the sample
+files exercises them, and untested rendering code is worse than an honest gap. Constraints and
+centred stroke alignment are reported in the IR but not turned into CSS — both move things on
+screen, and there is no reference image here to say whether the result would be right.
+`layout.hug` no longer pins a box to its measured size; that measurement is a floor now, so a
+longer string grows the box rather than spilling out of it.
 
 Run `pnpm census <file.fig>` against your own file to see what this drops on it. Rows marked
 `deliberate` are accounted for — duplicate vector-network blobs, invisible nodes, and variables

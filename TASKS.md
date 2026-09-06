@@ -84,9 +84,9 @@ census에 남은 행은 둘 다 의도적이다: 벡터 네트워크 blob(참조
   참조 PNG가 아직 없다. 그래서 **constraints → CSS(3-1)**와 **strokeAlign CENTER(3-3)**는
   결과가 맞는지 볼 방법이 없어 보류 중이다. 둘 다 위치를 움직이는 변경이라 눈대중으로
   넣을 수 없다
-- **`get_frame` 텍스트 도달률** — 한 번 호출로 kyowon 86/211, matsq 871/1616.
-  예산이 30KB인 한 큰 프레임은 전부 담을 수 없고, 나머지는 `select`로 도달 가능하다.
-  matsq 3개 프레임은 여전히 예산의 절반 미만만 쓴다(너비 우선 배분이 넓은 부모에서 보수적)
+- **`get_frame` 도달률** — `pnpm reach`가 재는 값. 한 번 호출로 kyowon 텍스트 87/211
+  노드 794/1353, matsq 텍스트 906/1616 노드 2708/4442. 예산 30KB인 한 큰 프레임을 다 담을 수
+  없고 나머지는 `select`나 `find_nodes`로 도달한다. 예산 절반도 못 쓰는 프레임은 이제 0
 - **`FONT_STYLE` 변수 바인딩** — matsq의 139건 전부가 외부 라이브러리를 가리켜 해석 불가
 - **`STICKY` `WIDGET` `CONNECTOR` `SHAPE_WITH_TEXT` `STAMP`** — matsq에 소량.
   주석·다이어그램용이라 마크업 대상이 아니다
