@@ -3,7 +3,8 @@
   "type": "module",
   "scripts": {
     "test": "node src/parse.test.mjs && node src/mcp.test.mjs",
-    "mcp": "node src/mcp.mjs"
+    "mcp": "node src/mcp.mjs",
+    "census": "node src/census.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

@@ -34,7 +34,7 @@ assert.ok(parts.every((p) => 'MLQCZ'.includes(p.cmd)));
 
 // --- IR ---
 const frame = canvas.children.find((c) => c.name === '온라인학습_Login');
-const ir = toIR({ ...frame, transform: { m02: 0, m12: 0 } }, message.blobs);
+const ir = toIR(frame, message.blobs);
 assert.equal(ir.role, 'frame');
 assert.deepEqual(ir.box, { x: 0, y: 0, w: 1440, h: 960 });
 
@@ -64,6 +64,19 @@ assert.ok(reach > span * 0.5, `icon paths collapsed into a corner (${reach} of $
 const label = byRole('text').find((n) => n.text.content === '로그인');
 assert.equal(label.text.weight, 600, 'SemiBold should map to 600');
 assert.match(label.text.color, /^#[0-9a-f]{6}$/);
+
+// --- transforms ---
+// ARCHIVE carries rotated carets; identity nodes must stay untouched so that
+// adding transform support cannot silently reflow everything else
+const archive = canvas.children.find((c) => c.name === '온라인학습_ARCHIVE');
+const archiveIR = toIR(archive, message.blobs);
+const spun = [];
+(function walk(n) { if (n.box?.transform) spun.push(n); n.children?.forEach(walk); })(archiveIR);
+assert.ok(spun.length >= 5, `expected rotated nodes in ARCHIVE, found ${spun.length}`);
+assert.ok(spun.every((n) => n.bounds), 'rotated node is missing its post-rotation bounds');
+assert.ok(spun.some((n) => /^rotate\(-?\d/.test(n.box.transform)), 'no plain rotation was named as one');
+assert.ok(flat.filter((n) => n.box.transform).length === 0, 'login frame should have no transforms at all');
+assert.ok(flat.every((n) => n.bounds === undefined), 'bounds leaked onto untransformed nodes');
 
 // --- HTML ---
 const html = renderHTML(ir);

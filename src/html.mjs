@@ -35,6 +35,8 @@ function styleRules(node, parentLayout, assetUrl) {
   if (s.border) rules.push(['border', s.border], ['box-sizing', 'border-box']);
   if (s.shadow) rules.push(['box-shadow', s.shadow]);
   if (s.opacity != null && s.opacity < 1) rules.push(['opacity', String(s.opacity)]);
+  // Figma rotates about the top-left of the unrotated box, unlike CSS's default centre
+  if (node.box.transform) rules.push(['transform', node.box.transform], ['transform-origin', '0 0']);
 
   if (node.role === 'text') {
     const t = node.text;

@@ -42,7 +42,7 @@ function frameIR(file, frame) {
   const doc = load(file);
   const found = framesOf(doc).find((f) => f.name === frame || f.id === frame);
   if (!found) throw new Error(`frame not found: ${frame}\navailable: ${framesOf(doc).map((f) => f.name).join(', ')}`);
-  return { doc, node: found, ir: toIR({ ...found, transform: { m02: 0, m12: 0 } }, doc.message.blobs) };
+  return { doc, node: found, ir: toIR(found, doc.message.blobs) };
 }
 
 /**
@@ -168,7 +168,7 @@ server.registerTool(
   wrap(({ file, frame }) => {
     if (frame) return extractTokens(frameIR(file, frame).ir);
     const doc = load(file);
-    const merged = { role: 'frame', children: framesOf(doc).map((f) => toIR({ ...f, transform: { m02: 0, m12: 0 } }, doc.message.blobs)) };
+    const merged = { role: 'frame', children: framesOf(doc).map((f) => toIR(f, doc.message.blobs)) };
     return extractTokens(merged);
   }),
 );

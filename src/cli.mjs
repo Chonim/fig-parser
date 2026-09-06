@@ -29,7 +29,7 @@ if (!frameName) {
 const frame = frames.find((f) => f.name === frameName || f.id === frameName);
 if (!frame) throw new Error(`frame not found: ${frameName}\navailable: ${frames.map((f) => f.name).join(', ')}`);
 
-const ir = toIR({ ...frame, transform: { m02: 0, m12: 0 } }, message.blobs);
+const ir = toIR(frame, message.blobs);
 mkdirSync(join(outDir, 'assets'), { recursive: true });
 
 const written = new Set();

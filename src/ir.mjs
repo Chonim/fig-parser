@@ -16,9 +16,79 @@ import { decodePathBlob, pathToSvg, hashHex } from './parse.mjs';
  */
 
 const VECTOR_TYPES = new Set(['VECTOR', 'BOOLEAN_OPERATION', 'LINE', 'STAR', 'REGULAR_POLYGON']);
+
+/**
+ * What this layer can express today. census.mjs reads these instead of keeping its
+ * own copy, so the report cannot drift away from what the code actually does.
+ * `approximated` means it renders, but not faithfully yet.
+ */
+export const HANDLED = {
+  nodeTypes: new Set([...VECTOR_TYPES, 'DOCUMENT', 'CANVAS', 'FRAME', 'GROUP', 'TEXT', 'RECTANGLE', 'ROUNDED_RECTANGLE', 'ELLIPSE']),
+  fillPaints: { handled: new Set(['SOLID', 'GRADIENT_LINEAR', 'IMAGE']), approximated: new Set(['GRADIENT_RADIAL', 'GRADIENT_ANGULAR', 'GRADIENT_DIAMOND']) },
+  strokePaints: { handled: new Set(['SOLID']), approximated: new Set() },
+  effects: { handled: new Set(['DROP_SHADOW']), approximated: new Set() },
+  blendModes: new Set(['NORMAL', 'PASS_THROUGH']),
+  imageScaleModes: new Set(['FILL']),
+};
 const WEIGHTS = { Thin: 100, ExtraLight: 200, Light: 300, Regular: 400, Medium: 500, SemiBold: 600, Bold: 700, ExtraBold: 800, Black: 900 };
 
 const round = (v) => Math.round(v * 100) / 100;
+
+// Figma transforms are 2x3 affine: [m00 m01 m02 / m10 m11 m12].
+const IDENTITY = { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1, m12: 0 };
+// matrices arrive as float32, so an unrotated node reads as 0.99999994 rather than 1
+const EPS = 1e-5;
+const isIdentity = (m) =>
+  !m || (Math.abs(m.m00 - 1) < EPS && Math.abs(m.m01) < EPS && Math.abs(m.m10) < EPS && Math.abs(m.m11 - 1) < EPS);
+
+const matMul = (a, b) => ({
+  m00: a.m00 * b.m00 + a.m01 * b.m10,
+  m01: a.m00 * b.m01 + a.m01 * b.m11,
+  m02: a.m00 * b.m02 + a.m01 * b.m12 + a.m02,
+  m10: a.m10 * b.m00 + a.m11 * b.m10,
+  m11: a.m10 * b.m01 + a.m11 * b.m11,
+  m12: a.m10 * b.m02 + a.m11 * b.m12 + a.m12,
+});
+
+const matInv = (m) => {
+  const det = m.m00 * m.m11 - m.m01 * m.m10;
+  if (!det) return { ...IDENTITY };
+  return {
+    m00: m.m11 / det,
+    m01: -m.m01 / det,
+    m02: (m.m01 * m.m12 - m.m11 * m.m02) / det,
+    m10: -m.m10 / det,
+    m11: m.m00 / det,
+    m12: (m.m10 * m.m02 - m.m00 * m.m12) / det,
+  };
+};
+
+const num = (v) => Math.round(v * 10000) / 10000;
+
+/**
+ * A plain rotation is by far the common case and reads far better as an angle than
+ * as four matrix cells, so name it when the matrix is one; fall back to the matrix
+ * for skew, scale and flips.
+ */
+function transformCss(m) {
+  if (isIdentity(m)) return undefined;
+  const isRotation = Math.abs(m.m00 - m.m11) < 1e-6 && Math.abs(m.m01 + m.m10) < 1e-6
+    && Math.abs(m.m00 * m.m00 + m.m01 * m.m01 - 1) < 1e-6;
+  if (isRotation) return `rotate(${round((Math.atan2(m.m10, m.m00) * 180) / Math.PI)}deg)`;
+  return `matrix(${[m.m00, m.m10, m.m01, m.m11, 0, 0].map(num).join(', ')})`;
+}
+
+/** axis-aligned bounds of a box once its own transform is applied, for layout inference */
+function transformedBounds(box, m) {
+  if (isIdentity(m)) return box;
+  const corners = [[0, 0], [box.w, 0], [box.w, box.h], [0, box.h]].map(([x, y]) => ({
+    x: box.x + m.m00 * x + m.m01 * y,
+    y: box.y + m.m10 * x + m.m11 * y,
+  }));
+  const xs = corners.map((c) => c.x);
+  const ys = corners.map((c) => c.y);
+  return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
+}
 const chan = (v) => Math.round(v * 255);
 
 function cssColor(color, opacity = 1) {
@@ -119,7 +189,7 @@ function textStyle(node) {
 }
 
 /** every leaf under `node` is vector-ish -> collapse the whole subtree into one SVG */
-function isIconCluster(node) {
+export function isIconCluster(node) {
   if (node.type === 'TEXT' || node.textData) return false;
   if (VECTOR_TYPES.has(node.type)) return true;
   if (!node.children?.length) return false;
@@ -131,10 +201,11 @@ const strokeColor = (node) => {
   return paint && cssColor(paint.color, paint.opacity ?? 1);
 };
 
-function collectPaths(node, blobs, dx, dy, out) {
-  const x = dx + (node.transform?.m02 ?? 0);
-  const y = dy + (node.transform?.m12 ?? 0);
-  const transform = x || y ? `translate(${round(x)} ${round(y)})` : undefined;
+function collectPaths(node, blobs, parent, out) {
+  const m = matMul(parent, node.transform ?? IDENTITY);
+  const transform = isIdentity(m)
+    ? (m.m02 || m.m12 ? `translate(${round(m.m02)} ${round(m.m12)})` : undefined)
+    : `matrix(${[m.m00, m.m10, m.m01, m.m11, m.m02, m.m12].map(num).join(' ')})`;
 
   // Figma stores strokes already outlined into fillable regions, so both geometries
   // are painted the same way — only the paint they take differs.
@@ -161,7 +232,7 @@ function collectPaths(node, blobs, dx, dy, out) {
       }
     }
   }
-  for (const child of node.children ?? []) collectPaths(child, blobs, x, y, out);
+  for (const child of node.children ?? []) collectPaths(child, blobs, m, out);
 }
 
 /**
@@ -187,7 +258,7 @@ function inferLayout(node, kids) {
       source: 'auto-layout',
     };
   }
-  const flow = kids.filter((k) => k.role !== 'backdrop');
+  const flow = kids.filter((k) => k.role !== 'backdrop').map((k) => (k.bounds ? { ...k, box: k.bounds } : k));
   if (flow.length < 2) return { mode: 'absolute' };
 
   for (const [dir, main, cross] of [['row', 'x', 'y'], ['column', 'y', 'x']]) {
@@ -222,9 +293,19 @@ function inferLayout(node, kids) {
 }
 
 export function toIR(node, blobs, isRoot = true) {
-  const t = node.transform ?? {};
-  const box = { x: round(t.m02 ?? 0), y: round(t.m12 ?? 0), w: round(node.size?.x ?? 0), h: round(node.size?.y ?? 0) };
+  // the rendered root is placed at the origin; kiwi may also omit matrix cells,
+  // so fill in identity defaults rather than trusting the struct to be complete
+  const t = { ...IDENTITY, ...node.transform, ...(isRoot ? { m02: 0, m12: 0 } : {}) };
+  const box = { x: round(t.m02), y: round(t.m12), w: round(node.size?.x ?? 0), h: round(node.size?.y ?? 0) };
+  const transform = transformCss(t);
   const base = { id: node.id, name: node.name, box };
+  if (transform) {
+    // width/height stay in the element's own frame; `bounds` is the footprint it
+    // actually occupies once rotated, which is what layout reasoning needs
+    box.transform = transform;
+    const b = transformedBounds(box, t);
+    base.bounds = { x: round(b.x), y: round(b.y), w: round(b.w), h: round(b.h) };
+  }
 
   if (node.visible === false) return null;
 
@@ -235,7 +316,7 @@ export function toIR(node, blobs, isRoot = true) {
   if (isIconCluster(node)) {
     const paths = [];
     // paths are collected in the cluster's own coordinate space, so cancel its transform
-    collectPaths(node, blobs, -(t.m02 ?? 0), -(t.m12 ?? 0), paths);
+    collectPaths(node, blobs, matInv(node.transform ?? IDENTITY), paths);
     if (!paths.length) return null;
     return { ...base, role: 'icon', asset: { kind: 'svg', viewBox: `0 0 ${box.w} ${box.h}`, paths }, style: { opacity: node.opacity ?? 1 }, children: [] };
   }
