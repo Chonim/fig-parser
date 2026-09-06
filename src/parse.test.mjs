@@ -143,6 +143,37 @@ assert.equal(ids.length, tags.length, 'some element kinds render without their n
 assert.equal(new Set(ids).size, ids.length, 'two elements claim the same node id');
 assert.ok(ids.includes(lqIR.id), 'the frame itself is not tagged');
 
+// --- a boolean operation is its result, not its operands ---
+// Figma stores the union/subtract result on the node itself and keeps the shapes it
+// was made from as children. Drawing both paints the operands over the result: the My
+// Item panel is a Union whose operand carried its own 3px white outline, offset 41.81
+// from the one the union already had, so the panel's border ran at two thicknesses.
+const myItem = collectFrames(roots).find((f) => f.name === '온라인학습_My Item');
+const panel = (function find(n) {
+  if (n.name === 'Union' && n.box.w > 1000) return n;
+  for (const c of n.children ?? []) { const hit = find(c); if (hit) return hit; }
+  return null;
+})(toIR(myItem, message.blobs));
+assert.ok(panel, 'the My Item panel is no longer a Union of that size');
+assert.equal(
+  panel.asset.paths.length,
+  2,
+  `the panel draws ${panel.asset.paths.length} paths: its own fill and stroke, plus the operands underneath`,
+);
+// The skip is guarded on the boolean having geometry of its own, and every one in
+// these files does — so nothing here can tell the guard from an unconditional skip.
+// Asserting the premise is what makes the guard's necessity visible: a file whose
+// boolean carries no result would otherwise lose its art silently.
+let booleans = 0;
+let withoutGeometry = 0;
+for (const node of message.nodeChanges) {
+  if (node.type !== 'BOOLEAN_OPERATION') continue;
+  booleans += 1;
+  if (!node.fillGeometry?.length && !node.strokeGeometry?.length) withoutGeometry += 1;
+}
+assert.ok(booleans >= 30, `expected the boolean operations, found ${booleans}`);
+assert.equal(withoutGeometry, 0, `${withoutGeometry} boolean operations carry no result of their own`);
+
 // --- transforms ---
 // ARCHIVE carries rotated carets; identity nodes must stay untouched so that
 // adding transform support cannot silently reflow everything else

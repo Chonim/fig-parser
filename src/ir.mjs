@@ -395,6 +395,12 @@ function collectPaths(node, blobs, parent, out, defs, variables) {
       }
     }
   }
+  // A boolean operation keeps the shapes it was made from as children, and Figma draws
+  // only the result — which is the geometry on the node itself. Descending into the
+  // operands paints them over that result: the My Item panel is a Union whose operand
+  // carried its own 3px white outline, 41.81 below the union's own, so the panel had a
+  // border at two thicknesses. 37 of them in the product file.
+  if (node.type === 'BOOLEAN_OPERATION' && (node.fillGeometry?.length || node.strokeGeometry?.length)) return;
   for (const child of node.children ?? []) collectPaths(child, blobs, m, out, defs, variables);
 }
 

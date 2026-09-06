@@ -116,7 +116,7 @@ fails if this block and the tools disagree.
 # samples/kyowon-full.fig
 list_frames(file)                              → 12 frames; 2063:280 온라인학습_Login 1440×960
 get_frame(file, "2063:280")                    → 22 nodes — the whole screen in one call
-get_tokens(file, "2063:280")                   → 16 colours, 3 text styles, named
+get_tokens(file, "2063:280")                   → 15 colours, 3 text styles, named
 export_assets(file, "2063:280", "out/worked-pass") → 5 files: .png .svg
 
 # samples/matsq.fig — a frame too big for one call

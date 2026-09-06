@@ -69,11 +69,13 @@ const full = await call('get_frame', { file: SAMPLE, frame: FRAME });
 const ICON = '2063:301';   // three paths, small enough that they fit
 const logo = await call('get_frame', { file: SAMPLE, frame: FRAME, select: ICON });
 const logoPaths = await call('get_frame', { file: SAMPLE, frame: FRAME, select: ICON, includePaths: true });
+// the summary names the path count and carries no path data; asking for it adds more
+// bytes of `d` than the rest of the node costs, which is why it is the first thing cut
 assert.ok(!logo.content[0].text.includes('"d":'), 'path data is in the summary after all');
-assert.ok(
-  logo.content[0].text.length * 2 < logoPaths.content[0].text.length,
-  `path stripping barely helped: ${logo.content[0].text.length} B against ${logoPaths.content[0].text.length} B`,
-);
+assert.match(logo.content[0].text, /"pathCount": \d+/, 'the summary does not say how many paths there are');
+assert.match(logoPaths.content[0].text, /"d": "/, 'asking for the paths did not produce any');
+// how far path data outweighs the rest is carried by the logo below: its 63 paths are
+// 39941 B on their own, which is why the answer for them cannot be sent at all
 // the logo's 63 paths are 39941 B on their own, so asking for them cannot be honoured
 const logoAsked = json(await call('get_frame', { file: SAMPLE, frame: FRAME, select: '2067:2', includePaths: true }));
 assert.ok(logoAsked.truncated, 'a request too big for the budget came back without saying so');
