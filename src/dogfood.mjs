@@ -1,8 +1,8 @@
 // Same goal, two toolsets: learn every string in one frame and where it sits.
 // Counts the tool calls each takes.
 import { spawn } from 'node:child_process';
-import { parseFigFile, buildTree, collectFrames } from './src/parse.mjs';
-import { toIR, symbolIndex, variableIndex } from './src/ir.mjs';
+import { parseFigFile, buildTree, collectFrames } from './parse.mjs';
+import { toIR, symbolIndex, variableIndex } from './ir.mjs';
 
 const FILE = 'samples/matsq.fig';
 const FRAME = '97:3081';
@@ -14,7 +14,7 @@ const ir = toIR(collectFrames(roots).find((f) => f.id === FRAME), message.blobs,
 const wanted = new Set();
 (function w(n) { if (n.text?.content) wanted.add(`${n.id}|${n.text.content}`); n.children?.forEach(w); })(ir);
 
-const proc = spawn('node', ['src/mcp.mjs'], { stdio: ['pipe', 'pipe', 'inherit'] });
+const proc = spawn('node', [new URL('./mcp.mjs', import.meta.url).pathname], { stdio: ['pipe', 'pipe', 'inherit'] });
 const seen = []; let buf = '';
 proc.stdout.on('data', (d) => { buf += d;
   for (let i; (i = buf.indexOf('\n')) >= 0; ) { const l = buf.slice(0, i); buf = buf.slice(i + 1); if (l.trim()) seen.push(JSON.parse(l)); } });
