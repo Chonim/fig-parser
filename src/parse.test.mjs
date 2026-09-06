@@ -29,8 +29,17 @@ assert.notDeepEqual(positions, [...positions].sort((a, b) => a.localeCompare(b))
 // --- path blobs ---
 const geom = message.nodeChanges.find((n) => n.fillGeometry?.length)?.fillGeometry[0];
 const parts = decodePathBlob(message.blobs[geom.commandsBlob].bytes);
+// PATH_LETTER is exactly the set these are drawn from and unknown opcodes throw
+// earlier, so asserting membership proves nothing. Assert the shape instead: real
+// artwork has curves, and each command carries the argument count its opcode names.
+const ARGC = { Z: 0, M: 2, L: 2, Q: 4, C: 6 };
 assert.equal(parts[0].cmd, 'M', 'path must open with a moveTo');
-assert.ok(parts.every((p) => 'MLQCZ'.includes(p.cmd)));
+assert.ok(parts.some((p) => p.cmd === 'C'), 'no curve decoded — opcodes are collapsing');
+assert.ok(parts.every((p) => p.args.length === ARGC[p.cmd]), 'a command has the wrong argument count');
+const decodedCmds = new Set(message.blobs.flatMap((b) => {
+  try { return decodePathBlob(b.bytes).map((p) => p.cmd); } catch { return []; }
+}));
+assert.ok(decodedCmds.size >= 4, `only ${[...decodedCmds]} ever decoded`);
 
 // --- IR ---
 const frame = canvas.children.find((c) => c.name === '온라인학습_Login');
@@ -117,16 +126,35 @@ assert.ok(flat.every((n) => n.bounds === undefined), 'bounds leaked onto untrans
 // --- geometry-based nesting ---
 // hand-drawn files leave a button's box and its label as siblings; nesting them has
 // to be purely structural, so absolute positions must survive it untouched
-const absolute = (root) => {
-  const rows = [];
+/**
+ * Nesting is structural only: a node's absolute position in the IR must equal the
+ * one it has in the raw Figma tree. Comparing the IR against itself — the shape
+ * this assertion used to have — cannot see a rebasing error at all.
+ */
+const absoluteIR = (root) => {
+  const out = new Map();
   (function walk(n, ox, oy) {
     const x = ox + n.box.x;
     const y = oy + n.box.y;
-    rows.push(`${n.role} ${x.toFixed(2)} ${y.toFixed(2)} ${n.box.w} ${n.box.h}`);
+    out.set(n.id, [x, y]);
     n.children?.forEach((c) => walk(c, x, y));
   })(root, 0, 0);
-  return rows.sort();
+  return out;
 };
+const absoluteRaw = (node) => {
+  const out = new Map();
+  (function walk(n, ox, oy) {
+    const x = ox + (n.transform?.m02 ?? 0);
+    const y = oy + (n.transform?.m12 ?? 0);
+    out.set(n.id, [x, y]);
+    n.children?.forEach((c) => walk(c, x, y));
+  })(node, -(node.transform?.m02 ?? 0), -(node.transform?.m12 ?? 0));
+  return out;
+};
+
+// each rebase rounds to 2dp, so a deep node drifts a little. Measured worst case
+// across both samples: 0.0189px. Anything past a twentieth of a pixel is a bug.
+const DRIFT = 0.05;
 const archiveNested = canvas.children.find((c) => c.id === '2102:20');
 const nestedIR = toIR(archiveNested, message.blobs);
 const labelled = [];
@@ -144,7 +172,18 @@ assert.ok(
 // a container may not adopt across something drawn between them, or z-order flips
 const bookshelf = nestedIR.children.find((c) => c.name === 'Group 4057');
 assert.ok(bookshelf, 'a shelf was adopted past an overlapping sibling, which reorders painting');
-assert.ok(absolute(nestedIR).length > 50);
+// ids repeat inside expanded instances, so compare only the ones that are unique
+const irPos = absoluteIR(nestedIR);
+const rawPos = absoluteRaw(archiveNested);
+let compared = 0;
+for (const [id, [x, y]] of irPos) {
+  if (!rawPos.has(id)) continue;
+  compared++;
+  const [rx, ry] = rawPos.get(id);
+  const drift = Math.max(Math.abs(x - rx), Math.abs(y - ry));
+  assert.ok(drift < DRIFT, `${id} moved ${drift.toFixed(3)}px: IR ${x},${y} vs source ${rx},${ry}`);
+}
+assert.ok(compared > 50, `only ${compared} nodes were position-checked`);
 
 // --- repeated structure ---
 const withRepeat = [];
@@ -186,7 +225,11 @@ assert.deepEqual(tops, [...tops].sort((a, b) => a - b), 'rows are not top to bot
 const shuffled = body.children.some((c, i) => i > 0 && c.box.y < body.children[i - 1].box.y - 1);
 assert.ok(shuffled, 'this frame no longer exercises out-of-order children');
 // the hint must stay a hint: it may not reorder or renest anything
-assert.equal(renderHTML(tableIR), renderHTML(toIR(tableFrame, message.blobs)), 'row hints changed the render');
+// both sides were previously the same call on the same input. The control is an IR
+// with the hint stripped: if `rows` ever reaches the renderer, these diverge.
+const withoutRows = JSON.parse(JSON.stringify(tableIR), (k, v) => (k === 'rows' ? undefined : v));
+assert.ok(JSON.stringify(tableIR).includes('"rows"'), 'nothing to strip — the control is vacuous');
+assert.equal(renderHTML(tableIR), renderHTML(withoutRows), 'row hints changed the render');
 
 // --- gradients are tokens too ---
 const archiveTokens = extractTokens(nestedIR);
