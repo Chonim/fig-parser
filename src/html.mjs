@@ -98,8 +98,13 @@ function styleRules(node, parentLayout, assetUrl) {
   if (s.blend) rules.push(['mix-blend-mode', s.blend]);
   if (s.clip) rules.push(['overflow', 'hidden']);
   if (s.opacity != null && s.opacity < 1) rules.push(['opacity', String(s.opacity)]);
-  // Figma rotates about the top-left of the unrotated box, unlike CSS's default centre
-  if (node.box.transform) rules.push(['transform', node.box.transform], ['transform-origin', '0 0']);
+  // Figma rotates about the top-left of the unrotated box, unlike CSS's default centre —
+  // but that only lines up while left/top are that box. A node the flow places has no
+  // such anchor, and a corner spin throws it a whole box clear of its slot, so it turns
+  // about its centre and keeps the footprint the layout gave it.
+  if (node.box.transform) {
+    rules.push(['transform', node.box.transform], ['transform-origin', node.positioned ? '0 0' : '50% 50%']);
+  }
 
   if (node.flexChild?.alignSelf) rules.push(['align-self', node.flexChild.alignSelf]);
   if (node.flexChild?.grow) rules.push(['flex-grow', String(node.flexChild.grow)]);

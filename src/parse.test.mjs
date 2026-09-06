@@ -149,6 +149,22 @@ assert.ok(spun.some((n) => /^rotate\(-?\d/.test(n.box.transform)), 'no plain rot
 assert.ok(flat.filter((n) => n.box.transform).length === 0, 'login frame should have no transforms at all');
 assert.ok(flat.every((n) => n.bounds === undefined), 'bounds leaked onto untransformed nodes');
 
+// Figma rotates about the unrotated box's top-left, which `transform-origin: 0 0`
+// reproduces exactly — but only for a node whose left/top are that box. A node the
+// flow places instead has no such anchor, and rotating it about its corner throws it
+// a whole box-width clear of where the layout put it: the ARCHIVE row buttons' carets
+// climbed out of the button and sat above its top-right corner.
+const archiveHTML = renderHTML(archiveIR);
+const originOf = (cls) => (archiveHTML.match(new RegExp(`\\.${cls} \\{([^}]*)\\}`))?.[1] ?? '').match(/transform-origin: ([^;]+);/)?.[1];
+const flowSpun = [];
+(function walk(n, parent) {
+  if (n.box?.transform && parent && parent.layout?.mode !== 'absolute' && !n.flexChild?.absolute && n.role !== 'backdrop') flowSpun.push(n);
+  n.children?.forEach((c) => walk(c, n));
+})(archiveIR, null);
+assert.ok(flowSpun.length > 0, 'no rotated node is laid out by the flow any more — pick another case');
+assert.equal(originOf('vector-10'), '50% 50%', 'a rotated node the flow positions was spun about its corner, which moves it a whole box clear of its slot');
+assert.equal(originOf('vector-10-13'), '0 0', "an absolutely-positioned rotated node must keep Figma's own corner origin");
+
 // --- geometry-based nesting ---
 // hand-drawn files leave a button's box and its label as siblings; nesting them has
 // to be purely structural, so absolute positions must survive it untouched
