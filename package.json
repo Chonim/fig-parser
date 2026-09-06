@@ -6,7 +6,8 @@
     "mcp": "node src/mcp.mjs",
     "census": "node src/census.mjs",
     "reach": "node src/reach.mjs",
-    "diff": "node src/diff.mjs"
+    "diff": "node src/diff.mjs",
+    "dogfood": "node src/dogfood.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
