@@ -67,9 +67,13 @@ assert.ok(shallow.children.every((c) => c.id && !Array.isArray(c.children)), 'de
 assert.ok(shallow.children.some((c) => typeof c.children === 'string' && c.children.includes('select')), 'stub carries no drill-down hint');
 
 const assets = json(await call('export_assets', { file: SAMPLE, frame: FRAME, outDir: 'out/assets' }));
-const files = Object.values(assets);
+const entries = Object.values(assets);
+const files = entries.map((e) => e.file);
 assert.ok(files.some((f) => f.endsWith('.png')) && files.some((f) => f.endsWith('.svg')));
 assert.ok(files.every((f) => existsSync(f)), 'export_assets reported a file it did not write');
+// a bare hash cannot be placed in markup; every asset has to say which nodes use it
+assert.ok(entries.every((e) => e.usedBy.length > 0), 'an asset came back with no node using it');
+assert.ok(entries.every((e) => e.usedBy.every((u) => u.id && u.name)), 'usedBy entry is missing id or name');
 
 const tokens = json(await call('get_tokens', { file: SAMPLE, frame: FRAME }));
 assert.ok(tokens.colors.length > 5 && tokens.css.startsWith(':root {'));

@@ -105,7 +105,9 @@ function selectNode(ir, select) {
 }
 
 const svgOf = (node) =>
-  `<svg viewBox="${node.asset.viewBox}" xmlns="http://www.w3.org/2000/svg">` +
+  // width/height as well as viewBox: an <img> with only a viewBox has no intrinsic
+  // size and browsers fall back to 300x150
+  `<svg width="${node.box.w}" height="${node.box.h}" viewBox="${node.asset.viewBox}" xmlns="http://www.w3.org/2000/svg">` +
   (node.asset.defs ? `<defs>${node.asset.defs.join('')}</defs>` : '') +
   node.asset.paths
     .map((p) => `<path d="${p.d}" fill="${p.fill}"${p.transform ? ` transform="${p.transform}"` : ''}${p.rule ? ` fill-rule="${p.rule}"` : ''}/>`)
@@ -193,21 +195,30 @@ server.registerTool(
     mkdirSync(dir, { recursive: true });
     const written = new Map();
     const slug = (name, n) => `${(name || 'icon').replace(/[^\w가-힣-]+/g, '-').replace(/^-+|-+$/g, '') || 'icon'}-${n}`;
+    // a bare hash says nothing about where the file belongs, so every entry names
+    // the nodes that use it — the same image can appear in several places
+    const note = (key, file, node) => {
+      const hit = written.get(key) ?? { file, usedBy: [] };
+      hit.usedBy.push({ id: node.id, name: node.name });
+      written.set(key, hit);
+    };
     (function walk(node) {
-      if (node.asset?.kind === 'image' && !written.has(node.asset.hash)) {
+      if (node.asset?.kind === 'image') {
         const out = join(dir, `${node.asset.hash}.png`);
-        try {
-          writeFileSync(out, doc.readImage(node.asset.hash));
-          written.set(node.asset.hash, relative(ROOT, out));
-        } catch (e) {
-          written.set(node.asset.hash, `FAILED: ${e.message}`);
+        if (!written.has(node.asset.hash)) {
+          try {
+            writeFileSync(out, doc.readImage(node.asset.hash));
+          } catch (e) {
+            written.set(node.asset.hash, { file: `FAILED: ${e.message}`, usedBy: [] });
+          }
         }
+        if (!written.get(node.asset.hash)?.file.startsWith('FAILED')) note(node.asset.hash, relative(ROOT, out), node);
       }
       if (node.asset?.kind === 'svg') {
         const key = slug(node.name, written.size);
         const out = join(dir, `${key}.svg`);
         writeFileSync(out, svgOf(node));
-        written.set(key, relative(ROOT, out));
+        note(key, relative(ROOT, out), node);
       }
       node.children?.forEach(walk);
     })(ir);

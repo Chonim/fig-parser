@@ -33,6 +33,7 @@ export const HANDLED = {
 const WEIGHTS = { Thin: 100, ExtraLight: 200, Light: 300, Regular: 400, Medium: 500, SemiBold: 600, Bold: 700, ExtraBold: 800, Black: 900 };
 
 const round = (v) => Math.round(v * 100) / 100;
+const pad = (v) => Math.max(0, round(v));
 
 // Figma transforms are 2x3 affine: [m00 m01 m02 / m10 m11 m12].
 const IDENTITY = { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1, m12: 0 };
@@ -440,11 +441,12 @@ function inferLayout(node, kids) {
       mode: 'flex',
       direction: dir,
       gap: round(Math.max(0, avg)),
+      // children can overhang their parent; a negative padding is never meaningful
       padding: {
-        t: round(main === 'x' ? Math.min(...starts) : sorted[0].box.y),
-        l: round(main === 'x' ? sorted[0].box.x : Math.min(...starts)),
-        r: round(main === 'x' ? node.size.x - (sorted.at(-1).box.x + sorted.at(-1).box.w) : node.size.x - Math.max(...ends)),
-        b: round(main === 'x' ? node.size.y - Math.max(...ends) : node.size.y - (sorted.at(-1).box.y + sorted.at(-1).box.h)),
+        t: pad(main === 'x' ? Math.min(...starts) : sorted[0].box.y),
+        l: pad(main === 'x' ? sorted[0].box.x : Math.min(...starts)),
+        r: pad(main === 'x' ? node.size.x - (sorted.at(-1).box.x + sorted.at(-1).box.w) : node.size.x - Math.max(...ends)),
+        b: pad(main === 'x' ? node.size.y - Math.max(...ends) : node.size.y - (sorted.at(-1).box.y + sorted.at(-1).box.h)),
       },
       align: Math.max(...ends) - Math.min(...starts) < 2 ? 'stretch' : 'flex-start',
       source: 'inferred',
@@ -684,8 +686,9 @@ export function extractTokens(ir) {
     if (node.text) {
       seeColor(node.text.color, 'text', node.text.colorToken);
       for (const run of node.text.runs ?? []) seeColor(run.color, 'text');
-      const key = `${node.text.family}-${node.text.weight}-${node.text.size}`;
-      const hit = fonts.get(key) ?? { ...node.text, count: 0 };
+      const { family, weight, size, lineHeight, letterSpacing } = node.text;
+      const key = `${family}-${weight}-${size}-${lineHeight}-${letterSpacing}`;
+      const hit = fonts.get(key) ?? { family, weight, size, lineHeight, letterSpacing, count: 0 };
       hit.count++;
       fonts.set(key, hit);
     }
@@ -716,7 +719,8 @@ export function extractTokens(ir) {
   const css = [
     ':root {',
     ...byUse.map((c) => `  ${c.name}: ${c.value}; /* ${c.uses.join('+')}, ${c.count}x */`),
-    ...text.map((f) => `  ${f.name}: ${f.weight} ${f.size}px${f.lineHeight ? `/${f.lineHeight}` : ''} "${f.family}"; /* ${f.count}x */`),
+    ...text.map((f) => `  ${f.name}: ${f.weight} ${f.size}px${f.lineHeight ? `/${f.lineHeight}` : ''} "${f.family}";`
+      + `${f.letterSpacing ? ` /* letter-spacing ${f.letterSpacing}, ${f.count}x */` : ` /* ${f.count}x */`}`),
     '}',
   ].join('\n');
 
