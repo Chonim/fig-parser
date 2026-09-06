@@ -208,6 +208,18 @@ assert.ok(!flat.some((n) => n.layout?.repeat), 'login frame has no list, but one
 // --- rows: sibling order is paint order, so reading order needs saying ---
 const tableFrame = canvas.children.find((c) => c.id === '2097:1156');
 const tableIR = toIR(tableFrame, message.blobs);
+
+// --- stroke geometry arrives already outlined ---
+// The 11 dividers in this table have no fillGeometry at all: their ink is entirely
+// strokeGeometry, painted like a fill. Dropping that list leaves them empty, and
+// only this frame notices — the components suite catches it by side effect.
+const dividers = [];
+(function walk(n) { if (/^Line /.test(n.name ?? '') && n.asset?.kind === 'svg') dividers.push(n); n.children?.forEach(walk); })(tableIR);
+assert.ok(dividers.length >= 8, `expected stroke-only dividers, found ${dividers.length}`);
+assert.ok(dividers.every((d) => d.asset.paths.length > 0), 'a stroke-only shape produced no path');
+assert.ok(dividers.every((d) => d.asset.paths.every((p) => /^M/.test(p.d) && p.fill !== 'none')), 'divider ink is unpainted');
+assert.ok(!renderHTML(tableIR).includes('stroke:'), 'an outlined stroke was re-emitted as a CSS stroke');
+
 const body = tableIR.children.find((c) => c.name === 'Rectangle 25');
 assert.ok(body?.layout.rows?.length >= 10, `expected the table body to band into rows, got ${body?.layout.rows?.length}`);
 
