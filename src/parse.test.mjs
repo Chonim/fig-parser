@@ -245,6 +245,35 @@ const withoutRows = JSON.parse(JSON.stringify(tableIR), (k, v) => (k === 'rows' 
 assert.ok(JSON.stringify(tableIR).includes('"rows"'), 'nothing to strip — the control is vacuous');
 assert.equal(renderHTML(tableIR), renderHTML(withoutRows), 'row hints changed the render');
 
+// --- row indices address the node's own children, everywhere ---
+// Two callers used to hand rowBands different arrays — one pre-filtered, one not —
+// so an index meant one child to the producer and another to whoever read it.
+let rowNodes = 0;
+for (const frame of canvas.children.filter((c) => c.type === 'FRAME')) {
+  (function walk(n) {
+    const rows = n.layout?.rows;
+    if (rows) {
+      rowNodes++;
+      const listed = new Set();
+      for (const row of rows) {
+        const items = row.split(' ').map((i) => {
+          const child = n.children[Number(i)];
+          assert.ok(child, `${n.name}: row index ${i} is not a child`);
+          listed.add(Number(i));
+          return child.bounds ?? child.box;
+        });
+        const xs = items.map((b) => b.x);
+        assert.deepEqual(xs, [...xs].sort((a, b) => a - b), `${n.name}: row is not left to right`);
+      }
+      // every child that can sit in a row has to appear in one
+      const missing = n.children.filter((c, i) => c.role !== 'backdrop' && c.box.h > 0 && !listed.has(i));
+      assert.equal(missing.length, 0, `${n.name}: ${missing.length} children are in no row`);
+    }
+    n.children?.forEach(walk);
+  })(toIR(frame, message.blobs) ?? { children: [] });
+}
+assert.ok(rowNodes > 20, `expected many banded nodes, got ${rowNodes}`);
+
 // --- gradients are tokens too ---
 const archiveTokens = extractTokens(nestedIR);
 const gradients = archiveTokens.colors.filter((c) => c.name.startsWith('--gradient'));

@@ -373,8 +373,13 @@ function flexChild(node) {
  * of indices into this node's own `children`, which stays small where a list of ids
  * would dominate the payload.
  */
-function rowBands(kids) {
-  const flow = kids.filter((k) => k.role !== 'backdrop' && k.box.h > 0);
+function rowBands(children) {
+  // Indices are the contract with whoever reads this, and they read `children`.
+  // Filtering before indexing is what let one caller mean a different array than
+  // the other, so the mapping is built here, from the array the consumer holds.
+  const flow = children
+    .map((node, index) => ({ node, index, box: node.bounds ?? node.box }))
+    .filter(({ node, box }) => node.role !== 'backdrop' && box.h > 0);
   if (flow.length < 4) return undefined;
 
   const bands = [];
@@ -396,8 +401,7 @@ function rowBands(kids) {
   const shuffled = flow.some((k, i) => i > 0 && k.box.y < flow[i - 1].box.y - 1);
   if (bands.length < 2 || (!bands.some((b) => b.items.length > 1) && !shuffled)) return undefined;
 
-  const index = new Map(kids.map((k, i) => [k, i]));
-  return bands.map((b) => b.items.sort((x, y) => x.box.x - y.box.x).map((k) => index.get(k)).join(' '));
+  return bands.map((b) => b.items.sort((x, y) => x.box.x - y.box.x).map((k) => k.index).join(' '));
 }
 
 /**
@@ -576,7 +580,7 @@ function inferLayout(node, kids) {
       repeat,
     };
   }
-  const rows = rowBands(flow);
+  const rows = rowBands(kids);
   return { mode: 'absolute', ...(repeat ? { repeat } : {}), ...(rows ? { rows } : {}) };
 }
 
