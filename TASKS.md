@@ -62,10 +62,12 @@ pnpm census    # 기본 kyowon-full, 인자로 다른 .fig 지정 가능
 그래서 `align-self: stretch`나 `flex-grow`가 실질적으로 무효다.
 기준선 렌더러로는 이게 정확하지만, 반응형 마크업을 뽑으려면 hug 축의 크기를 풀어야 한다.
 
-### VARIABLE / 디자인 토큰 바인딩
-matsq에 `VARIABLE` 612개, `VARIABLE_SET` 18개가 있고 페인트에 `colorVar`가 붙어 있다.
-지금 `get_tokens`는 실제 사용된 색을 집계할 뿐, **디자이너가 정의한 변수 이름은 못 읽는다**.
-이걸 붙이면 `--color-1` 대신 원본 토큰명을 그대로 쓸 수 있다. 남은 것 중 가장 가치가 크다.
+### VARIABLE — 색은 됐고, 나머지 타입이 남음
+`paint.colorVar.value.alias.guid` → VARIABLE `name`으로 색 토큰은 원본 이름을 쓴다
+(`--background-brand-default`). 바인딩이 없는 색만 사용처 기반 이름으로 대체.
+
+남은 것: `FLOAT`(간격·반지름), `STRING`, `BOOLEAN` 변수는 아직 안 읽는다.
+`variableSetID`별 모드(라이트/다크)도 미처리 — `variableDataValues`에 모드별 값이 들어있다.
 
 ### 미처리 노드 타입
 `STICKY` `WIDGET` `CONNECTOR` `SHAPE_WITH_TEXT` `STAMP` — matsq에 소량 존재.

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { parseFigFile, buildTree } from './parse.mjs';
-import { toIR, symbolIndex } from './ir.mjs';
+import { toIR, symbolIndex, variableIndex, extractTokens } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
 // The other sample has no components and no auto-layout, so these paths need
@@ -35,7 +35,9 @@ assert.ok(frames.length > topLevel.length, 'section traversal found nothing extr
 
 const tag = frames.find((f) => f.name === 'Tag-solid');
 const bare = toIR(tag, message.blobs);
-const full = toIR(tag, message.blobs, { symbols });
+const variables = variableIndex(message.nodeChanges);
+assert.ok(variables.size > 100, `expected design variables, found ${variables.size}`);
+const full = toIR(tag, message.blobs, { symbols, variables });
 
 // --- instances resolve against their master ---
 const flatten = (ir) => { const out = []; (function w(n) { out.push(n); n.children?.forEach(w); })(ir); return out; };
@@ -57,9 +59,18 @@ assert.ok(auto.every((n) => n.layout.direction === 'row' || n.layout.direction =
 assert.ok(auto.some((n) => n.layout.padding.r !== n.layout.padding.l || n.layout.padding.t !== n.layout.padding.b)
   || auto.some((n) => n.layout.justify || n.layout.align), 'no auto-layout alignment or padding was read');
 
+// --- tokens carry the names their author gave them ---
+const tokens = extractTokens(full);
+const authored = tokens.colors.filter((c) => /^--(background|text|border|icon)-[a-z]/.test(c.name) && c.name.split('-').length > 3);
+assert.ok(authored.length >= 5, `expected variable-named tokens, found ${authored.length}`);
+assert.ok(tokens.css.includes('--background-brand-default'), 'a known design variable never surfaced');
+// without the index the same colours fall back to usage-based names
+assert.ok(!extractTokens(bare).css.includes('--background-brand-default'), 'token name appeared without the variable index');
+
 const notification = frames.find((f) => f.name === 'Notification');
-const notifCss = renderHTML(toIR(notification, message.blobs, { symbols }));
+const notifCss = renderHTML(toIR(notification, message.blobs, { symbols, variables }));
 assert.match(notifCss, /display: flex/, 'auto-layout never reached the CSS');
 
 console.log(`ok — ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
-  `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames`);
+  `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames, ` +
+  `${authored.length} tokens named from variables`);

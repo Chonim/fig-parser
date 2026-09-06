@@ -7,7 +7,7 @@
  * "done" means for that task.
  */
 import { parseFigFile, buildTree, decodePathBlob } from './parse.mjs';
-import { toIR, isIconCluster, HANDLED, symbolIndex } from './ir.mjs';
+import { toIR, isIconCluster, HANDLED, symbolIndex, variableIndex } from './ir.mjs';
 
 const FILE = process.argv[2] ?? 'samples/kyowon-full.fig';
 
@@ -130,7 +130,7 @@ for (const frame of frames) {
   })(frame);
 
   // --- IR pass: how many nodes actually survive ---
-  const ir = toIR(frame, blobs, { symbols });
+  const ir = toIR(frame, blobs, { symbols, variables: variableIndex(nodeChanges) });
   (function count(n) {
     irTotal++;
     (n.children ?? []).forEach(count);

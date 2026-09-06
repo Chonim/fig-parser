@@ -2,7 +2,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseFigFile, buildTree } from './parse.mjs';
-import { toIR, symbolIndex } from './ir.mjs';
+import { toIR, symbolIndex, variableIndex } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
 const [figPath, frameName, outDir = 'out'] = process.argv.slice(2);
@@ -29,7 +29,7 @@ if (!frameName) {
 const frame = frames.find((f) => f.name === frameName || f.id === frameName);
 if (!frame) throw new Error(`frame not found: ${frameName}\navailable: ${frames.map((f) => f.name).join(', ')}`);
 
-const ir = toIR(frame, message.blobs, { symbols: symbolIndex(roots) });
+const ir = toIR(frame, message.blobs, { symbols: symbolIndex(roots), variables: variableIndex(message.nodeChanges) });
 mkdirSync(join(outDir, 'assets'), { recursive: true });
 
 const written = new Set();

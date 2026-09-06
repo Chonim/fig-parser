@@ -137,8 +137,9 @@ function paintCss(paint, size) {
   return undefined;
 }
 
+const visibleFill = (node) => node.fillPaints?.find((p) => p.visible !== false && p.type !== 'IMAGE');
 const fillOf = (node) => {
-  const paint = node.fillPaints?.find((p) => p.visible !== false && p.type !== 'IMAGE');
+  const paint = visibleFill(node);
   return paint && paintCss(paint, node.size);
 };
 
@@ -451,6 +452,21 @@ function inferLayout(node, kids) {
 
 const guidKey = (g) => `${g.sessionID}:${g.localID}`;
 
+/** design variables by guid, so a bound paint can report the name its author gave it */
+export function variableIndex(nodeChanges) {
+  const index = new Map();
+  for (const n of nodeChanges) if (n.type === 'VARIABLE' && n.name) index.set(guidKey(n.guid), n.name);
+  return index;
+}
+
+/** "Primary/Purple-0" -> "--primary-purple-0" */
+export const tokenName = (name) => `--${name.toLowerCase().replace(/[^\w가-힣]+/g, '-').replace(/^-+|-+$/g, '')}`;
+
+const paintVariable = (paint, variables) => {
+  const alias = paint?.colorVar?.value?.alias?.guid;
+  return alias && variables?.get(guidKey(alias));
+};
+
 /**
  * Every SYMBOL master in the document, so INSTANCE nodes can be expanded.
  * Takes the built tree, not raw nodeChanges — a master is only useful with its
@@ -487,7 +503,7 @@ function expandInstance(node, symbols) {
 }
 
 export function toIR(node, blobs, options = {}) {
-  const { isRoot = true, symbols } = typeof options === 'boolean' ? { isRoot: options } : options;
+  const { isRoot = true, symbols, variables } = typeof options === 'boolean' ? { isRoot: options } : options;
   if (node.type === 'INSTANCE' && node.symbolData) {
     const expanded = expandInstance(node, symbols);
     if (expanded) return toIR(expanded, blobs, { isRoot, symbols, instanceOf: node.symbolData.symbolID });
@@ -513,6 +529,8 @@ export function toIR(node, blobs, options = {}) {
 
   if (node.textData) {
     const text = textStyle(node);
+    const colorToken = paintVariable(node.fillPaints?.find((p) => p.visible !== false), variables);
+    if (colorToken) text.colorToken = colorToken;
     const runs = textRuns(node, text);
     if (runs) text.runs = runs;
     return { ...base, role: 'text', text, style: { opacity: node.opacity ?? 1 }, children: [] };
@@ -540,8 +558,10 @@ export function toIR(node, blobs, options = {}) {
     clip: mask ? true : undefined,
     opacity: node.opacity ?? 1,
   };
+  const fillToken = paintVariable(visibleFill(node), variables);
+  if (fillToken) style.fillToken = fillToken;
 
-  const kids = (node.children ?? []).filter((c) => c !== mask).map((c) => toIR(c, blobs, { isRoot: false, symbols })).filter(Boolean);
+  const kids = (node.children ?? []).filter((c) => c !== mask).map((c) => toIR(c, blobs, { isRoot: false, symbols, variables })).filter(Boolean);
   if (isRoot) for (const k of kids) if (isBackdrop(k, node)) k.role = 'backdrop';
 
   if (image && !kids.length) {
@@ -556,20 +576,21 @@ export function extractTokens(ir) {
   const colors = new Map();
   const fonts = new Map();
 
-  const seeColor = (value, use) => {
+  const seeColor = (value, use, authored) => {
     if (!value?.startsWith('#') && !value?.startsWith('rgba')) return; // gradients are not tokens
     const hit = colors.get(value) ?? { value, count: 0, uses: new Set() };
     hit.count++;
     hit.uses.add(use);
+    if (authored) hit.authored = authored;
     colors.set(value, hit);
   };
 
   (function walk(node) {
-    if (node.style?.fill) seeColor(node.style.fill, 'surface');
+    if (node.style?.fill) seeColor(node.style.fill, 'surface', node.style.fillToken);
     if (node.style?.border?.css) seeColor(node.style.border.css.split(' ').pop(), 'border');
     for (const p of node.asset?.paths ?? []) seeColor(p.fill, 'icon');
     if (node.text) {
-      seeColor(node.text.color, 'text');
+      seeColor(node.text.color, 'text', node.text.colorToken);
       for (const run of node.text.runs ?? []) seeColor(run.color, 'text');
       const key = `${node.text.family}-${node.text.weight}-${node.text.size}`;
       const hit = fonts.get(key) ?? { ...node.text, count: 0 };
@@ -584,6 +605,12 @@ export function extractTokens(ir) {
   const byUse = [...colors.values()].sort((a, b) => b.count - a.count);
   const nth = new Map();
   for (const c of byUse) {
+    if (c.authored) {
+      // the design system already named this colour; nothing we invent beats that
+      c.name = tokenName(c.authored);
+      c.uses = [...c.uses];
+      continue;
+    }
     const group = groupOf(c.uses);
     const n = (nth.get(group) ?? 0) + 1;
     nth.set(group, n);

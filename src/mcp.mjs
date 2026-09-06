@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, relative, join, isAbsolute } from 'node:path';
 import { parseFigFile, buildTree } from './parse.mjs';
-import { toIR, extractTokens, symbolIndex } from './ir.mjs';
+import { toIR, extractTokens, symbolIndex, variableIndex } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
 const ROOT = resolve(process.env.FIG_ROOT ?? process.cwd());
@@ -31,7 +31,7 @@ function load(file) {
         else collect(n.children ?? []);
       }
     })(roots);
-    cache.set(path, { ...doc, path, canvases, symbols: symbolIndex(roots) });
+    cache.set(path, { ...doc, path, canvases, symbols: symbolIndex(roots), variables: variableIndex(doc.message.nodeChanges) });
   }
   return cache.get(path);
 }
@@ -53,7 +53,7 @@ function frameIR(file, frame) {
   const doc = load(file);
   const found = framesOf(doc).find((f) => f.name === frame || f.id === frame);
   if (!found) throw new Error(`frame not found: ${frame}\navailable: ${framesOf(doc).map((f) => f.name).join(', ')}`);
-  return { doc, node: found, ir: toIR(found, doc.message.blobs, { symbols: doc.symbols }) };
+  return { doc, node: found, ir: toIR(found, doc.message.blobs, { symbols: doc.symbols, variables: doc.variables }) };
 }
 
 /**
@@ -225,7 +225,7 @@ server.registerTool(
   wrap(({ file, frame }) => {
     if (frame) return extractTokens(frameIR(file, frame).ir);
     const doc = load(file);
-    const merged = { role: 'frame', children: framesOf(doc).map((f) => toIR(f, doc.message.blobs, { symbols: doc.symbols })) };
+    const merged = { role: 'frame', children: framesOf(doc).map((f) => toIR(f, doc.message.blobs, { symbols: doc.symbols, variables: doc.variables })) };
     return extractTokens(merged);
   }),
 );
