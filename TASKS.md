@@ -86,6 +86,29 @@ census에 남은 행은 둘 다 의도적이다: 벡터 네트워크 blob(참조
 - **`FONT_STYLE` 변수 바인딩** — matsq의 139건 전부가 외부 라이브러리를 가리켜 해석 불가
 - **`STICKY` `WIDGET` `CONNECTOR` `SHAPE_WITH_TEXT` `STAMP`** — matsq에 소량.
   주석·다이어그램용이라 마크업 대상이 아니다
+- **`strokeAlign: CENTER`** — CSS에 반쪽 걸친 테두리가 없어 INSIDE로 근사.
+  두 샘플 통틀어 CSS 테두리가 되는 노드는 1개뿐이라 코드를 넣을 근거가 없다
+- **회전 노드의 flow 배치** — 흐름이 놓은 노드는 중심을 축으로 돌린다. 180°는 발자국이
+  같아 정확하지만, 임의 각도는 Figma가 잡은 발자국과 어긋난다. 두 샘플의 임의 각도는
+  `rotate(0.91deg)` 하나뿐이라 그 차이를 볼 수 있는 케이스가 없다
+
+## kyowon-full이 실제로 쓰는 기능 (전수)
+
+12프레임 육안 스윕 때 같이 조사한 것. 이 파일에 관한 한 아래가 전부다.
+
+```
+paint        SOLID 3502  GRADIENT_LINEAR 64  IMAGE 158
+effect       DROP_SHADOW 105  INNER_SHADOW 1
+blend        DARKEN 6  HARD_LIGHT 1
+imageScale   FILL 141  STRETCH 17
+strokeAlign  INSIDE 3487  OUTSIDE 427  CENTER 136 (CSS 테두리가 되는 건 1개)
+textResize   WIDTH_AND_HEIGHT 94  HEIGHT 40
+constraint   SCALE 5234 (전부 기본값)
+mask         ALPHA 2
+다중 fill 0   다중 stroke 0   truncation 0
+```
+
+radial 그라디언트도, 다중 fill도, TILE도 이 파일엔 없다 — 위 목록이 그 근거다.
 
 ## 문서를 고칠 때
 
