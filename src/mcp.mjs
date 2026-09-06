@@ -48,15 +48,38 @@ function frameIR(file, frame) {
  * The renderer wants every bezier; the model wants to know a logo is there.
  * Strip path data (it dwarfs everything else) and cut off past `depth`.
  */
+/**
+ * What survives the cut. Geometry alone is not enough to write markup from: a text
+ * node without its string looks like a finished leaf, and nothing said it had been
+ * trimmed. Content and identity stay; typography and paint are what get dropped.
+ */
 const stub = (node) => ({
   id: node.id,
   name: node.name,
   role: node.role,
   box: node.box,
+  ...(node.text ? { text: { content: node.text.content, truncated: `style dropped — get_frame(select: "${node.id}")` } } : {}),
+  ...(node.label ? { label: node.label } : {}),
+  ...(node.component ? { component: node.component } : {}),
+  ...(node.asset ? { asset: { kind: node.asset.kind } } : {}),
   ...(node.children?.length ? { children: `… ${node.children.length} children — get_frame(select: "${node.id}")` } : {}),
 });
 
-function forModel(node, depth, keepPaths) {
+/** identity, geometry and content — everything a stub keeps, but with real children */
+const leanNode = (node) => ({
+  id: node.id,
+  name: node.name,
+  role: node.role,
+  box: node.box,
+  ...(node.bounds ? { bounds: node.bounds } : {}),
+  ...(node.text ? { text: { content: node.text.content, truncated: `style dropped — get_frame(select: "${node.id}")` } } : {}),
+  ...(node.label ? { label: node.label } : {}),
+  ...(node.component ? { component: node.component } : {}),
+  ...(node.asset ? { asset: { kind: node.asset.kind, ...(node.asset.hash ? { hash: node.asset.hash } : {}) } } : {}),
+  ...(node.layout ? { layout: node.layout } : {}),
+});
+
+function forModel(node, depth, keepPaths, lean) {
   const asset = node.asset?.kind === 'svg' && !keepPaths
     ? { kind: 'svg', viewBox: node.asset.viewBox, pathCount: node.asset.paths.length, note: 'run export_assets to get the .svg file' }
     : node.asset;
@@ -64,21 +87,77 @@ function forModel(node, depth, keepPaths) {
   // at the cut, keep every child as a stub with its id: a frame with a hundred shallow
   // children stays navigable instead of collapsing to a single unusable line
   if (depth <= 1) return { ...out, children: (node.children ?? []).map(stub) };
-  return { ...out, children: (node.children ?? []).map((c) => forModel(c, depth - 1, keepPaths)) };
+  return { ...out, children: (node.children ?? []).map((c) => forModel(c, depth - 1, keepPaths, lean)) };
 }
 
 /** biggest tree that stays inside the context budget, shallowest cut that fits */
 const BUDGET = 30_000;
 
-function fit(ir) {
-  const full = forModel(ir, Infinity, false);
-  if (serialize(full).length <= BUDGET) return full;
-  let depth = 1;
-  for (let d = 2; d < 30; d++) {
-    if (serialize(forModel(ir, d, false)).length > BUDGET) break;
-    depth = d;
+/**
+ * Give back as much of the tree as the budget allows, dropping the cheapest thing
+ * first: typography and paint go before any node disappears, because a node that is
+ * not listed cannot be asked about, while one listed without its font still carries
+ * its string.
+ *
+ * Below that, the budget is divided among subtrees rather than the depth being
+ * capped for the whole frame. One deep branch used to set the cut for everything —
+ * an archive frame came back at 3.5KB of its 30KB allowance because a single child
+ * would not fit at depth two.
+ */
+function allot(root, budget, lean) {
+  // Breadth-first: take nodes in level order until the budget runs out, so every
+  // branch is described to a similar depth. Capping depth for the whole frame let
+  // one deep child decide the cut for all of them, and an archive frame came back
+  // using 3.5KB of its 30KB.
+  // Keeping a node means its siblings get emitted as stubs too, so that cost is
+  // charged when the parent is taken. Counting only the kept nodes made the estimate
+  // jump whenever a wide parent came in, and the search settled far below budget.
+  const stubCost = (n) => serialize(stub(n)).length;
+  const keep = new Set([root]);
+  let spent = serialize(lean ? leanNode(root) : root).length
+    + (root.children ?? []).reduce((a, c) => a + stubCost(c), 0);
+  const queue = [...(root.children ?? [])];
+  while (queue.length) {
+    const node = queue.shift();
+    const kids = node.children ?? [];
+    // upgrading a stub to a listed node, plus stubs for everything beneath it
+    const cost = serialize(lean ? leanNode(node) : stub(node)).length - stubCost(node)
+      + kids.reduce((a, c) => a + stubCost(c), 0);
+    if (spent + cost > budget) continue; // skip this one, a cheaper sibling may still fit
+    keep.add(node);
+    spent += cost;
+    queue.push(...kids);
   }
-  return forModel(ir, depth, false);
+
+  const build = (node) => {
+    const self = lean ? leanNode(node) : forModel(node, 1, false, false);
+    const kids = node.children ?? [];
+    if (!kids.length) return self;
+    if (!kids.some((c) => keep.has(c))) {
+      return { ...self, children: `… ${kids.length} children — get_frame(select: "${node.id}")` };
+    }
+    return { ...self, children: kids.map((c) => (keep.has(c) ? build(c) : stub(c))) };
+  };
+  return build(root);
+}
+
+function fit(ir) {
+  for (const lean of [false, true]) {
+    const whole = forModel(ir, Infinity, false, lean);
+    if (serialize(whole).length <= BUDGET) return whole;
+  }
+  // allot costs each node on its own, while the response pays for indentation that
+  // grows with depth, so its estimate runs light. Search the allowance it is given
+  // until what actually comes out fits.
+  let lo = 0;
+  let hi = BUDGET;
+  let best = allot(ir, 0, true);
+  for (let i = 0; i < 12 && lo < hi; i++) {
+    const mid = Math.floor((lo + hi + 1) / 2);
+    const candidate = allot(ir, mid, true);
+    if (serialize(candidate).length <= BUDGET) { best = candidate; lo = mid; } else { hi = mid - 1; }
+  }
+  return best;
 }
 
 /** the node named by an id or a name, searched depth-first from the frame root */
@@ -159,8 +238,8 @@ server.registerTool(
     const node = select ? selectNode(root, select) : root;
     // without an explicit depth, cut deep enough to stay usable in context —
     // except when paths were explicitly asked for, where truncating defeats the point
-    if (depth) return forModel(node, depth, includePaths);
-    return includePaths ? forModel(node, Infinity, true) : fit(node);
+    if (depth) return forModel(node, depth, includePaths, false);
+    return includePaths ? forModel(node, Infinity, true, false) : fit(node);
   }),
 );
 

@@ -100,11 +100,39 @@ for (const fr of frames) {
 }
 assert.ok(truncatedFrame, 'no frame was large enough to exercise truncation');
 
+// A trimmed text node used to come back with no `text` at all, looking like a
+// finished leaf: whoever was writing markup got geometry and no words. Content is
+// the last thing dropped now, and a trimmed node says it was trimmed.
+const textNodes = [];
+(function walk(n) { if (n.role === 'text') textNodes.push(n); if (Array.isArray(n.children)) n.children.forEach(walk); })(JSON.parse(truncatedFrame.body));
+assert.ok(textNodes.length > 0, 'no text nodes survived truncation at all');
+assert.ok(textNodes.every((n) => n.text?.content !== undefined), 'a text node came back without its string');
+assert.ok(textNodes.some((n) => n.text.truncated), 'nothing marked itself as trimmed');
+
+// What matters is how much of the design one call actually describes. Before the
+// budget was spent breadth-first and content was dropped before geometry, a single
+// get_frame per frame surfaced 35 of this file's 211 strings.
+let strings = 0;
+for (const fr of frames) {
+  const body = (await call('get_frame', { file: SAMPLE, frame: fr.id })).content[0].text;
+  assert.ok(body.length <= BUDGET, `${fr.name} returned ${body.length} B`);
+  (function walk(n) {
+    if (n.role === 'text' && n.text?.content !== undefined) strings++;
+    if (Array.isArray(n.children)) n.children.forEach(walk);
+  })(JSON.parse(body));
+}
+assert.ok(strings >= 70, `only ${strings} text strings are reachable in one call per frame`);
+
 const hint = truncatedFrame.body.match(/select: [^\d]*(\d+:\d+)/);
 assert.ok(hint, 'truncation marker does not name an id to drill into');
 const drilled = json(await call('get_frame', { file: SAMPLE, frame: truncatedFrame.fr.id, select: hint[1] }));
 assert.equal(drilled.id, hint[1], 'select returned the wrong node');
-assert.ok(drilled.children.length > 0, 'drilled subtree came back empty');
+// a hint is worth following only if what comes back says more than the stub did:
+// a container gets its children, a text node gets the style that was dropped
+assert.ok(
+  drilled.children?.length > 0 || drilled.text?.family || drilled.style,
+  'drilling into the hint returned no more than the stub',
+);
 
 const html = (await call('get_html', { file: SAMPLE, frame: FRAME })).content[0].text;
 assert.ok(html.startsWith('<!doctype html>') && html.includes('로그인'));
