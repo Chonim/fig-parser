@@ -303,7 +303,7 @@ function svgPaint(paint, defs) {
 
 const visiblePaint = (list) => list?.find((p) => p.visible !== false && p.type !== 'IMAGE');
 
-function collectPaths(node, blobs, parent, out, defs) {
+function collectPaths(node, blobs, parent, out, defs, variables) {
   const m = matMul(parent, node.transform ?? IDENTITY);
   const transform = isIdentity(m)
     ? (m.m02 || m.m12 ? `translate(${round(m.m02)} ${round(m.m12)})` : undefined)
@@ -313,11 +313,13 @@ function collectPaths(node, blobs, parent, out, defs) {
   // are painted the same way — only the paint they take differs.
   const geometries = [
     // no paint at all -> the shape is a bounds/mask helper, not ink
-    [node.fillGeometry, svgPaint(visiblePaint(node.fillPaints), defs) ?? (node.fillPaints?.some((f) => f.visible !== false) ? 'currentColor' : 'none')],
-    [node.strokeGeometry, svgPaint(visiblePaint(node.strokePaints), defs) ?? 'none'],
+    [node.fillGeometry, svgPaint(visiblePaint(node.fillPaints), defs) ?? (node.fillPaints?.some((f) => f.visible !== false) ? 'currentColor' : 'none'),
+      paintVariable(visiblePaint(node.fillPaints), variables)],
+    [node.strokeGeometry, svgPaint(visiblePaint(node.strokePaints), defs) ?? 'none',
+      paintVariable(visiblePaint(node.strokePaints), variables)],
   ];
 
-  for (const [list, fill] of geometries) {
+  for (const [list, fill, token] of geometries) {
     if (fill === 'none') continue;
     for (const geom of list ?? []) {
       const blob = blobs[geom.commandsBlob];
@@ -326,6 +328,8 @@ function collectPaths(node, blobs, parent, out, defs) {
         out.push({
           d: pathToSvg(decodePathBlob(blob.bytes)),
           fill,
+          // the literal colour still renders; the token records what it was bound to
+          fillToken: token || undefined,
           transform,
           rule: geom.windingRule === 'ODD' ? 'evenodd' : undefined,
         });
@@ -334,7 +338,7 @@ function collectPaths(node, blobs, parent, out, defs) {
       }
     }
   }
-  for (const child of node.children ?? []) collectPaths(child, blobs, m, out, defs);
+  for (const child of node.children ?? []) collectPaths(child, blobs, m, out, defs, variables);
 }
 
 /**
@@ -625,7 +629,7 @@ export function toIR(node, blobs, options = {}) {
     const paths = [];
     const defs = [];
     // paths are collected in the cluster's own coordinate space, so cancel its transform
-    collectPaths(node, blobs, matInv(node.transform ?? IDENTITY), paths, defs);
+    collectPaths(node, blobs, matInv(node.transform ?? IDENTITY), paths, defs, variables);
     if (!paths.length) return null;
     const asset = { kind: 'svg', viewBox: `0 0 ${box.w} ${box.h}`, paths };
     if (defs.length) asset.defs = defs;
@@ -645,6 +649,8 @@ export function toIR(node, blobs, options = {}) {
   };
   const fillToken = paintVariable(visibleFill(node), variables);
   if (fillToken) style.fillToken = fillToken;
+  const borderToken = paintVariable(node.strokePaints?.find((p) => p.visible !== false), variables);
+  if (borderToken) style.borderToken = borderToken;
 
   const kids = (node.children ?? []).filter((c) => c !== mask).map((c) => toIR(c, blobs, { isRoot: false, symbols, variables })).filter(Boolean);
   if (isRoot) for (const k of kids) if (isBackdrop(k, node)) k.role = 'backdrop';
@@ -671,9 +677,10 @@ export function extractTokens(ir) {
   };
 
   (function walk(node) {
+    if (!node) return; // a hidden frame converts to null
     if (node.style?.fill) seeColor(node.style.fill, 'surface', node.style.fillToken);
-    if (node.style?.border?.css) seeColor(node.style.border.css.split(' ').pop(), 'border');
-    for (const p of node.asset?.paths ?? []) seeColor(p.fill, 'icon');
+    if (node.style?.border?.css) seeColor(node.style.border.css.split(' ').pop(), 'border', node.style.borderToken);
+    for (const p of node.asset?.paths ?? []) seeColor(p.fill, 'icon', p.fillToken);
     if (node.text) {
       seeColor(node.text.color, 'text', node.text.colorToken);
       for (const run of node.text.runs ?? []) seeColor(run.color, 'text');

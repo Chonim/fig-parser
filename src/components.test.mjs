@@ -67,6 +67,18 @@ assert.ok(tokens.css.includes('--background-brand-default'), 'a known design var
 // without the index the same colours fall back to usage-based names
 assert.ok(!extractTokens(bare).css.includes('--background-brand-default'), 'token name appeared without the variable index');
 
+// --- colour bindings reach strokes and icon paths, not just fills ---
+const everyFrame = frames.map((f) => toIR(f, message.blobs, { symbols, variables })).filter(Boolean);
+const allNodes = everyFrame.flatMap(flatten);
+assert.ok(allNodes.some((n) => n.style?.borderToken), 'stroke colour bindings were not read');
+assert.ok(allNodes.some((n) => n.asset?.paths?.some((p) => p.fillToken)), 'icon path colour bindings were not read');
+// the literal colour still has to render; the token is extra information
+const boundPath = allNodes.flatMap((n) => n.asset?.paths ?? []).find((p) => p.fillToken);
+assert.match(boundPath.fill, /^(#|rgba|url\(#)/, 'a bound path lost its rendered colour');
+
+// a hidden frame converts to null, and the token pass has to survive that
+assert.doesNotThrow(() => extractTokens(null));
+
 // --- the variable catalogue: sets, modes, aliases ---
 const catalogue = readVariables(message.nodeChanges);
 assert.ok(catalogue.variables.length > 500, `expected a full variable catalogue, found ${catalogue.variables.length}`);
