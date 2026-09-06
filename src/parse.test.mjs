@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { parseFigFile, buildTree, decodePathBlob } from './parse.mjs';
+import { parseFigFile, buildTree, decodePathBlob, collectFrames } from './parse.mjs';
 import { toIR, extractTokens } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
@@ -78,7 +78,7 @@ assert.ok(inkRatio(icon) > 0.05, `logo ink collapsed: ${inkRatio(icon)}`);
 
 let thinnest = { ratio: Infinity };
 let iconCount = 0;
-for (const frame of canvas.children.filter((c) => c.type === 'FRAME')) {
+for (const frame of collectFrames(roots)) {
   (function walk(n) {
     if (n.asset?.kind === 'svg') {
       iconCount++;
@@ -245,11 +245,38 @@ const withoutRows = JSON.parse(JSON.stringify(tableIR), (k, v) => (k === 'rows' 
 assert.ok(JSON.stringify(tableIR).includes('"rows"'), 'nothing to strip — the control is vacuous');
 assert.equal(renderHTML(tableIR), renderHTML(withoutRows), 'row hints changed the render');
 
+// --- inferred flex has to reproduce the layout it replaces ---
+// A flex container lays children out in tree order and puts every one of them on
+// the cross axis the same way. Where the design does neither, calling it flex moves
+// things: one node here had a child 1038px from where flex would place it.
+for (const frame of collectFrames(roots)) {
+  (function walk(n) {
+    const l = n.layout;
+    if (l?.mode === 'flex' && l.source === 'inferred') {
+      const main = l.direction === 'row' ? 'x' : 'y';
+      const cross = l.direction === 'row' ? 'y' : 'x';
+      const size = l.direction === 'row' ? 'h' : 'w';
+      const kids = n.children.filter((c) => c.role !== 'backdrop').map((c) => c.bounds ?? c.box);
+      const mains = kids.map((b) => b[main]);
+      assert.deepEqual(mains, [...mains].sort((a, b) => a - b), `${n.name}: flex would reorder its children`);
+      const starts = kids.map((b) => b[cross]);
+      const ends = kids.map((b) => b[cross] + b[size]);
+      const centres = kids.map((b, i) => (starts[i] + ends[i]) / 2);
+      const agree = (v) => Math.max(...v) - Math.min(...v) <= 1;
+      assert.ok(
+        agree(starts) || agree(ends) || agree(centres),
+        `${n.name}: children share no cross-axis alignment, so align-items cannot place them`,
+      );
+    }
+    n.children?.forEach(walk);
+  })(toIR(frame, message.blobs) ?? { children: [] });
+}
+
 // --- row indices address the node's own children, everywhere ---
 // Two callers used to hand rowBands different arrays — one pre-filtered, one not —
 // so an index meant one child to the producer and another to whoever read it.
 let rowNodes = 0;
-for (const frame of canvas.children.filter((c) => c.type === 'FRAME')) {
+for (const frame of collectFrames(roots)) {
   (function walk(n) {
     const rows = n.layout?.rows;
     if (rows) {
@@ -312,7 +339,7 @@ assert.ok(html.includes('로그인'), 'text content lost');
 assert.equal((html.match(/position: absolute;\n  position: relative;/g) ?? []).length, 0, 'conflicting position rules');
 // a class starting with a digit is not a valid CSS identifier: the rule is parsed
 // away and every declaration for that node silently disappears
-for (const frame of canvas.children.filter((c) => c.type === 'FRAME')) {
+for (const frame of collectFrames(roots)) {
   const page = renderHTML(toIR(frame, message.blobs));
   const bad = [...page.matchAll(/^\.([^\s{]+)/gm)].map((m) => m[1]).filter((c) => /^[0-9-]/.test(c));
   assert.equal(bad.length, 0, `invalid CSS class selectors in ${frame.name}: ${bad.slice(0, 3)}`);

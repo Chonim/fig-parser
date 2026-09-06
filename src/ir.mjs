@@ -571,6 +571,10 @@ function inferLayout(node, kids) {
     const size = main === 'x' ? 'w' : 'h';
     const crossSize = main === 'x' ? 'h' : 'w';
     const sorted = [...flow].sort((a, b) => a.box[main] - b.box[main]);
+    // A flex container lays children out in tree order. Where that is not their
+    // order on the main axis, calling it flex swaps them — in this file that moved
+    // a child by up to 1038px — so leave those absolute.
+    if (sorted.some((k, i) => k !== flow[i])) continue;
     const overlapsCross = sorted.every((k) =>
       span([k.box[cross], k.box[cross] + k.box[crossSize]], [sorted[0].box[cross], sorted[0].box[cross] + sorted[0].box[crossSize]]) > 0);
     if (!overlapsCross) continue;
@@ -581,6 +585,18 @@ function inferLayout(node, kids) {
     const bounds = (k) => [k.box[cross], k.box[cross] + k.box[crossSize]];
     const starts = sorted.map((k) => bounds(k)[0]);
     const ends = sorted.map((k) => bounds(k)[1]);
+    // A flex container puts every child on the cross axis the same way. If the
+    // children do not actually sit that way, calling this flex moves them: the
+    // renderer takes them out of absolute positioning and align-items decides the
+    // cross offset, so a child 248px down from its siblings snaps to the top.
+    const agree = (values) => Math.max(...values) - Math.min(...values) <= 1;
+    const centers = sorted.map((k) => (bounds(k)[0] + bounds(k)[1]) / 2);
+    const crossAlign = agree(starts) && agree(ends) ? 'stretch'
+      : agree(starts) ? 'flex-start'
+      : agree(ends) ? 'flex-end'
+      : agree(centers) ? 'center'
+      : undefined;
+    if (!crossAlign) continue; // not an alignment CSS can express — leave it absolute
     return {
       mode: 'flex',
       direction: dir,
@@ -592,7 +608,7 @@ function inferLayout(node, kids) {
         r: pad(main === 'x' ? node.size.x - (sorted.at(-1).box.x + sorted.at(-1).box.w) : node.size.x - Math.max(...ends)),
         b: pad(main === 'x' ? node.size.y - Math.max(...ends) : node.size.y - (sorted.at(-1).box.y + sorted.at(-1).box.h)),
       },
-      align: Math.max(...ends) - Math.min(...starts) < 2 ? 'stretch' : 'flex-start',
+      align: crossAlign,
       source: 'inferred',
       repeat,
     };
