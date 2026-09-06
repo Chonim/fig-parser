@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { parseFigFile, buildTree, collectFrames } from './parse.mjs';
 import { toIR, symbolIndex, variableIndex, extractTokens, readVariables } from './ir.mjs';
 import { renderHTML } from './html.mjs';
+import { measureReach } from './reach.mjs';
 
 // The other sample has no components and no auto-layout, so these paths need
 // a design-system file to be checked against at all.
@@ -444,6 +445,19 @@ const roomy = [];
 })(gnbIR);
 assert.ok(roomy.length > tight.length, 'every auto-layout box is being called over-constrained');
 
-console.log(`ok — ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
+// --- how much of a frame one get_frame call reaches ---
+// Measured by reach.mjs, the same code `pnpm reach` runs, so the command and the
+// guard cannot drift. Three of this file's frames are cut while leaving more than
+// half the budget unspent — the allocator being cautious under a wide parent, not
+// the frames being too big. That is Phase 2-1's number, pinned here so it can only
+// go down.
+const reach = await measureReach(SAMPLE);
+assert.deepEqual(reach.over, [], 'a response came back over the budget it is supposed to fit');
+assert.ok(reach.slack <= 3, `${reach.slack} frames cut with half the budget unspent, was 3`);
+assert.ok(reach.text >= 871, `text reached fell to ${reach.text}/${reach.textTotal}, was 871`);
+assert.ok(reach.nodes >= 2559, `nodes reached fell to ${reach.nodes}/${reach.nodeTotal}, was 2559`);
+assert.ok(reach.truncated <= 20, `${reach.truncated} frames truncated, was 20`);
+
+console.log(`ok — reach ${reach.text}/${reach.textTotal} text, ${reach.slack} slack; ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
   `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames, ` +
   `${authored.length} tokens named from variables, ${catalogue.variables.length} variables in ${catalogue.sets.length} sets`);

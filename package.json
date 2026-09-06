@@ -4,7 +4,8 @@
   "scripts": {
     "test": "node src/parse.test.mjs && node src/components.test.mjs && node src/mcp.test.mjs",
     "mcp": "node src/mcp.mjs",
-    "census": "node src/census.mjs"
+    "census": "node src/census.mjs",
+    "reach": "node src/reach.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

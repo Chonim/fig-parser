@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, symlinkSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { measureReach } from './reach.mjs';
 
 const SAMPLE = 'samples/kyowon-full.fig';
 const FRAME = '온라인학습_Login';
@@ -112,17 +113,9 @@ assert.ok(textNodes.some((n) => n.text.truncated), 'nothing marked itself as tri
 
 // What matters is how much of the design one call actually describes. Before the
 // budget was spent breadth-first and content was dropped before geometry, a single
-// get_frame per frame surfaced 35 of this file's 211 strings.
-let strings = 0;
-for (const fr of frames) {
-  const body = (await call('get_frame', { file: SAMPLE, frame: fr.id })).content[0].text;
-  assert.ok(body.length <= BUDGET, `${fr.name} returned ${body.length} B`);
-  (function walk(n) {
-    if (n.role === 'text' && n.text?.content !== undefined) strings++;
-    if (Array.isArray(n.children)) n.children.forEach(walk);
-  })(JSON.parse(body));
-}
-assert.ok(strings >= 70, `only ${strings} text strings are reachable in one call per frame`);
+// get_frame per frame surfaced 35 of this file's 211 strings. The measurement lives
+// in reach.mjs so `pnpm reach` and this assertion cannot drift apart — a test that
+// re-counts it here would only ever agree with itself.
 
 const hint = truncatedFrame.body.match(/select: [^\d]*(\d+:\d+)/);
 assert.ok(hint, 'truncation marker does not name an id to drill into');
@@ -217,5 +210,16 @@ const viaLinkWrite = await call('export_assets', { file: SAMPLE, frame: FRAME, o
 assert.equal(viaLinkWrite.isError, true, 'a symlink got out of FIG_ROOT for writing');
 
 proc.kill();
+
+// --- what one call actually reaches ---
+// The 30KB budget cannot hold a large frame, so the number that matters is how much
+// of one comes back. Pinning it here is what makes a change to the allocator show up
+// as a failure rather than as quietly less of the design arriving.
+const reach = await measureReach(SAMPLE);
+assert.ok(reach.text >= 86, `text reached fell to ${reach.text}/${reach.textTotal}, was 86`);
+assert.ok(reach.nodes >= 794, `nodes reached fell to ${reach.nodes}/${reach.nodeTotal}, was 794`);
+assert.ok(reach.truncated <= 7, `${reach.truncated} frames truncated, was 7`);
+
 console.log(`ok — ${tools.length} tools, ${frames.length} frames, IR ${full.content[0].text.length} B ` +
-  `(vs ${withPaths.content[0].text.length} B with paths), ${files.length} assets`);
+  `(vs ${withPaths.content[0].text.length} B with paths), ${files.length} assets, ` +
+  `reach ${reach.text}/${reach.textTotal} text ${reach.nodes}/${reach.nodeTotal} nodes`);
