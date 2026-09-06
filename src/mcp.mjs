@@ -252,7 +252,8 @@ server.registerTool(
     description:
       'Normalized IR for one frame: role, box, inferred layout, style, text, and assets. ' +
       'Icon clusters are collapsed into single SVG nodes, so this is 100-200x smaller than the raw node tree. ' +
-      'A painted box holding exactly one piece of text carries that text as `label` — a button, a tab, a chip. ' +
+      'A painted box holding exactly one piece of text carries that text as `label` — a button, a tab, a chip; ' +
+      '`interactions` reports what the designer wired to it, so an ON_CLICK beside a label is a button on evidence rather than on a guess. ' +
       'Children are in paint order, not reading order: `layout.rows` groups them into visual rows, ' +
       'top to bottom and left to right, as space-separated indices into that node\'s own children. ' +
       'Large frames come back truncated; the placeholder text names the id to pass back as `select` to go deeper.',

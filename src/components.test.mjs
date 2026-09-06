@@ -140,6 +140,31 @@ const throughWrapper = repeats.find((n) =>
 assert.ok(throughWrapper, 'no repeat was found across a wrapped sibling');
 assert.ok(throughWrapper.layout.repeat.count >= 3, 'repeat below its own threshold');
 
+// --- what the designer wired up is stated, not inferred from a layer name ---
+// TASKS.md said there was no ground truth for calling something a button. There is:
+// 227 nodes carry prototype interactions, and an ON_CLICK is exactly that evidence.
+let wired = 0;
+let clickable = 0;
+let labelledAndClickable = 0;
+for (const f of frames) {
+  const ir = toIR(f, message.blobs, { symbols, variables });
+  if (!ir) continue;
+  (function walk(n) {
+    if (n.interactions) {
+      wired++;
+      const click = n.interactions.some((i) => i.event === 'ON_CLICK' || i.event === 'ON_PRESS');
+      if (click) clickable++;
+      if (click && n.label) labelledAndClickable++;
+      assert.ok(n.interactions.every((i) => i.event), 'an interaction came back without its event');
+    }
+    n.children?.forEach(walk);
+  })(ir);
+}
+assert.ok(wired > 100, `only ${wired} nodes report an interaction`);
+assert.ok(clickable > 20, `only ${clickable} nodes report a click`);
+// label plus a click is the pair that makes a <button> writable without guessing
+assert.ok(labelledAndClickable > 0, 'nothing carries both a label and a click');
+
 // --- numbers bound to variables come back as tokens, not literals ---
 // Colour was the only binding being read. Figma also binds corner radii, auto-layout
 // padding and spacing, border weights and type, which is most of a stylesheet.

@@ -87,6 +87,10 @@ the things that make markup writable:
   `children`. Siblings arrive in paint order, which is not reading order.
 - `label` — the text a painted box contains, when it contains exactly one: a button,
   a tab, a chip, without having to work out which sibling sits inside which.
+- `interactions` — what the designer wired up (`ON_CLICK`, `MOUSE_ENTER`, …) with the
+  navigation type and target. A label plus a click is a `<button>` on evidence.
+- `tokens` — variables bound to numbers, not just colours: `{ radius: "--radius-xl",
+  gap: "--gap-sm" }` alongside the literal values.
 - `component` — which master an instance came from, with overrides applied and, where
   the component set declares them, `variant` (`{ State: 'Hover', Size: 'Large' }`).
 - `style.fillToken` / `text.colorToken` — the design variable a colour was bound to.

@@ -662,6 +662,29 @@ const slug = (name) => name.toLowerCase().replace(/[^\w가-힣]+/g, '-').replace
 export const tokenName = (name) => `--${slug(name)}`;
 
 /**
+ * What the designer wired up. A node with an ON_CLICK is a control — that is the
+ * evidence for calling something a button rather than a guess from its layer name —
+ * and the navigation type separates going somewhere from swapping to another state.
+ * Reported as fact; what element to write from it stays the reader's call.
+ */
+function interactionsOf(node) {
+  const live = (node.prototypeInteractions ?? []).filter((i) => !i.isDeleted && i.event?.interactionType);
+  if (!live.length) return undefined;
+  const out = [];
+  for (const i of live) {
+    for (const a of i.actions ?? []) {
+      out.push({
+        event: i.event.interactionType,
+        ...(a.navigationType ? { navigation: a.navigationType } : {}),
+        ...(a.transitionNodeID ? { target: guidKey(a.transitionNodeID) } : {}),
+      });
+    }
+    if (!i.actions?.length) out.push({ event: i.event.interactionType });
+  }
+  return out.length ? out : undefined;
+}
+
+/**
  * Figma binds more than colour to a variable: corner radii, auto-layout padding and
  * spacing, border weights and type all carry a variableConsumptionMap entry naming
  * the variable that feeds them. Those are the numbers a stylesheet wants as tokens.
@@ -876,6 +899,8 @@ export function toIR(node, blobs, options = {}) {
   const base = { id: node.id, name: node.name, box };
   const bound = consumedTokens(node, variables);
   if (bound) base.tokens = bound;
+  const wired = interactionsOf(node);
+  if (wired) base.interactions = wired;
   if (options.instanceOf) {
     base.component = {
       name: options.masterName ?? node.name,
