@@ -66,6 +66,8 @@ function styleRules(node, parentLayout, assetUrl) {
     rules.push(['background', layers.join(', ')], ['border', `${s.border.width}px solid transparent`], ['box-sizing', 'border-box']);
   }
   if (s.shadow) rules.push(['box-shadow', s.shadow]);
+  if (s.blend) rules.push(['mix-blend-mode', s.blend]);
+  if (s.clip) rules.push(['overflow', 'hidden']);
   if (s.opacity != null && s.opacity < 1) rules.push(['opacity', String(s.opacity)]);
   // Figma rotates about the top-left of the unrotated box, unlike CSS's default centre
   if (node.box.transform) rules.push(['transform', node.box.transform], ['transform-origin', '0 0']);

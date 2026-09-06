@@ -95,6 +95,23 @@ assert.ok(spun.some((n) => /^rotate\(-?\d/.test(n.box.transform)), 'no plain rot
 assert.ok(flat.filter((n) => n.box.transform).length === 0, 'login frame should have no transforms at all');
 assert.ok(flat.every((n) => n.bounds === undefined), 'bounds leaked onto untransformed nodes');
 
+// --- masks, blend modes, inner shadow ---
+const archiveFlat = [];
+(function walk(n) { archiveFlat.push(n); n.children?.forEach(walk); })(archiveIR);
+const clipped = archiveFlat.find((n) => n.style?.clip);
+assert.ok(clipped, 'mask was not folded into a clipping parent');
+assert.ok(clipped.style.radius, 'clipping parent lost the mask radius');
+// the consumed mask filled its parent exactly; no child should still do that
+assert.ok(
+  clipped.children.every((c) => !(c.box.x === 0 && c.box.y === 0 && c.box.w === clipped.box.w && c.box.h === clipped.box.h)),
+  'mask shape is still being drawn as ink inside the clip',
+);
+assert.match(renderHTML(archiveIR), /overflow: hidden/, 'clip never reached the CSS');
+
+const blended = flat.find((n) => n.style?.blend);
+assert.equal(blended?.style.blend, 'darken', 'blend mode dropped');
+assert.match(flat.find((n) => n.style?.shadow?.includes('inset'))?.style.shadow, /^inset /, 'inner shadow lost its inset');
+
 // --- HTML ---
 const html = renderHTML(ir);
 assert.ok(html.includes('<svg'), 'no inline svg');

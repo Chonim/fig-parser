@@ -26,7 +26,7 @@ export const HANDLED = {
   nodeTypes: new Set([...VECTOR_TYPES, 'DOCUMENT', 'CANVAS', 'FRAME', 'GROUP', 'TEXT', 'RECTANGLE', 'ROUNDED_RECTANGLE', 'ELLIPSE']),
   fillPaints: { handled: new Set(['SOLID', 'GRADIENT_LINEAR', 'IMAGE']), approximated: new Set(['GRADIENT_RADIAL', 'GRADIENT_ANGULAR', 'GRADIENT_DIAMOND']) },
   strokePaints: { handled: new Set(['SOLID', 'GRADIENT_LINEAR']), approximated: new Set(['GRADIENT_RADIAL', 'GRADIENT_ANGULAR', 'GRADIENT_DIAMOND']) },
-  effects: { handled: new Set(['DROP_SHADOW']), approximated: new Set() },
+  effects: { handled: new Set(['DROP_SHADOW', 'INNER_SHADOW']), approximated: new Set() },
   blendModes: new Set(['NORMAL', 'PASS_THROUGH']),
   imageScaleModes: new Set(['FILL', 'FIT', 'STRETCH', 'TILE']),
 };
@@ -161,12 +161,34 @@ function border(node) {
 /** wrap a solid colour so it can sit in `background` next to real gradient layers */
 export const asImageLayer = (fill) => (fill?.startsWith('#') || fill?.startsWith('rgba') ? `linear-gradient(${fill}, ${fill})` : fill);
 
+const SHADOW_TYPES = { DROP_SHADOW: '', INNER_SHADOW: 'inset ' };
+
 function shadow(node) {
-  const effects = (node.effects ?? []).filter((e) => e.visible !== false && e.type === 'DROP_SHADOW');
+  const effects = (node.effects ?? []).filter((e) => e.visible !== false && e.type in SHADOW_TYPES);
   if (!effects.length) return undefined;
   return effects
-    .map((e) => `${round(e.offset?.x ?? 0)}px ${round(e.offset?.y ?? 0)}px ${round(e.radius ?? 0)}px ${cssColor(e.color ?? { r: 0, g: 0, b: 0, a: 0.25 })}`)
+    .map((e) => SHADOW_TYPES[e.type] +
+      `${round(e.offset?.x ?? 0)}px ${round(e.offset?.y ?? 0)}px ${round(e.radius ?? 0)}px` +
+      (e.spread ? ` ${round(e.spread)}px` : '') +
+      ` ${cssColor(e.color ?? { r: 0, g: 0, b: 0, a: 0.25 })}`)
     .join(', ');
+}
+
+const blendOf = (node) =>
+  node.blendMode && !HANDLED.blendModes.has(node.blendMode) ? node.blendMode.toLowerCase().replace(/_/g, '-') : undefined;
+
+/**
+ * A Figma mask clips the siblings drawn above it. When the mask shape is just the
+ * parent's own box (the shape every mask in this file takes), that is exactly
+ * overflow:hidden with the mask's corner radius, and the mask itself is not ink.
+ */
+function clippingMask(node) {
+  const mask = (node.children ?? []).find((c) => c.mask && c.visible !== false);
+  if (!mask) return undefined;
+  const near = (a, b) => Math.abs((a ?? 0) - (b ?? 0)) < 1;
+  const fits = near(mask.transform?.m02, 0) && near(mask.transform?.m12, 0)
+    && near(mask.size?.x, node.size?.x) && near(mask.size?.y, node.size?.y);
+  return fits ? mask : undefined;
 }
 
 function radius(node) {
@@ -407,15 +429,18 @@ export function toIR(node, blobs, isRoot = true) {
   }
 
   const image = imageFill(node);
+  const mask = clippingMask(node);
   const style = {
     fill: image ? undefined : fillOf(node),
-    radius: radius(node),
+    radius: radius(node) ?? (mask ? radius(mask) : undefined),
     border: border(node),
     shadow: shadow(node),
+    blend: blendOf(node),
+    clip: mask ? true : undefined,
     opacity: node.opacity ?? 1,
   };
 
-  const kids = (node.children ?? []).map((c) => toIR(c, blobs, false)).filter(Boolean);
+  const kids = (node.children ?? []).filter((c) => c !== mask).map((c) => toIR(c, blobs, false)).filter(Boolean);
   if (isRoot) for (const k of kids) if (isBackdrop(k, node)) k.role = 'backdrop';
 
   if (image && !kids.length) {

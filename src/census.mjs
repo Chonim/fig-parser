@@ -16,6 +16,8 @@ const IGNORED = {
   'vector-network-only blobs': 'deliberate — duplicate of fill/stroke geometry (see TASKS.md)',
 };
 
+const maskFitsParent = new Set();
+
 const tally = new Map();
 const bump = (row, n = 1) => tally.set(row, (tally.get(row) ?? 0) + n);
 
@@ -43,8 +45,19 @@ let rawTotal = 0;
 let irTotal = 0;
 let collapsedTotal = 0;
 let invisibleTotal = 0;
+let consumedTotal = 0;
 
 const subtreeSize = (n) => 1 + (n.children ?? []).reduce((a, c) => a + subtreeSize(c), 0);
+
+// mirror ir.mjs's rule for which masks collapse into overflow:hidden
+(function findMasks(node) {
+  const near = (a, b) => Math.abs((a ?? 0) - (b ?? 0)) < 1;
+  for (const c of node.children ?? []) {
+    if (c.mask && near(c.transform?.m02, 0) && near(c.transform?.m12, 0)
+      && near(c.size?.x, node.size?.x) && near(c.size?.y, node.size?.y)) maskFitsParent.add(c);
+    findMasks(c);
+  }
+})({ children: frames });
 
 for (const frame of frames) {
   rawTotal += subtreeSize(frame);
@@ -74,20 +87,25 @@ for (const frame of frames) {
       bump(`effect ${e.type} — dropped`);
     }
 
-    if (node.blendMode && !HANDLED.blendModes.has(node.blendMode)) bump(`blendMode ${node.blendMode} — dropped`);
+
 
     const image = node.fillPaints?.find((p) => p.visible !== false && p.type === 'IMAGE');
     if (image && image.imageScaleMode && !HANDLED.imageScaleModes.has(image.imageScaleMode)) {
       bump(`image scaleMode ${image.imageScaleMode} — always rendered as cover`);
     }
 
-    if (node.textData?.styleOverrideTable?.length) bump('TEXT with mixed formatting (styleOverrideTable) — flattened');
-    if (node.mask) bump('mask node — rendered as a plain overlay, does not clip');
+    // a mask whose shape is not simply the parent's box still has no representation
+    if (node.mask && !maskFitsParent.has(node)) bump('mask with a shape of its own — not clipped');
 
     // a node whose only geometry is an undecodable blob is genuinely unrenderable
     const geoms = [...(node.fillGeometry ?? []), ...(node.strokeGeometry ?? [])];
     if (geoms.length && geoms.every((g) => badBlob.has(g.commandsBlob))) {
       bump(`unrenderable: ${node.type} references only failing blobs`);
+    }
+
+    if (maskFitsParent.has(node)) {
+      consumedTotal += subtreeSize(node); // folded into the parent's overflow:hidden
+      return;
     }
 
     if (isIconCluster(node)) {
@@ -107,7 +125,7 @@ for (const frame of frames) {
 
 bump('vector-network-only blobs', badBlob.size);
 
-const reached = irTotal + collapsedTotal + invisibleTotal;
+const reached = irTotal + collapsedTotal + invisibleTotal + consumedTotal;
 const lost = rawTotal - reached;
 if (lost > 0) bump('nodes that vanished between raw tree and IR', lost);
 
@@ -117,7 +135,7 @@ const width = Math.max(...rows.map(([k]) => k.length));
 const note = (k) => IGNORED[k] ?? (k.includes('vanished') ? 'investigate — should be 0' : 'see TASKS.md');
 
 console.log(`\n${FILE} — ${frames.length} frames, ${rawTotal} raw nodes, ${irTotal} IR nodes ` +
-  `(${collapsedTotal} collapsed into icons, ${invisibleTotal} invisible)\n`);
+  `(${collapsedTotal} collapsed into icons, ${consumedTotal} folded into masks, ${invisibleTotal} invisible)\n`);
 console.log(`${'finding'.padEnd(width)}  count  note`);
 console.log(`${'-'.repeat(width)}  -----  ----`);
 for (const [k, v] of rows) console.log(`${k.padEnd(width)}  ${String(v).padStart(5)}  ${note(k)}`);
