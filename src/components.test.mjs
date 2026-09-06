@@ -556,6 +556,39 @@ const rows = [];
 })(toIR(frames.find((f) => f.name === 'GnbWrap'), message.blobs, { symbols, variables }));
 assert.ok(rows.length > 3, `every auto-layout box became absolute; ${rows.length} still flex`);
 
+// --- a box Figma sizes to its contents ---
+// stackCounterSizing says the cross axis is measured from the content, and 898 boxes
+// here say it. Rendering that as fit-content collapsed them: the Textarea is 240×80
+// around a 16px line, and the content alone is 40. So the measurement stays as the
+// size and only stops being a ceiling — min-height on a row, min-width on a column —
+// which lets a longer string or a wider font grow the box instead of spilling out.
+const textareaIR = toIR(frames.find((f) => f.name === 'Textarea Field'), message.blobs, { symbols, variables });
+const areas = [];
+(function walk(n) {
+  if (n.name === 'Textarea') areas.push(n);
+  n.children?.forEach(walk);
+})(textareaIR);
+assert.ok(areas.length >= 4, `expected the Textarea variants, found ${areas.length}`);
+assert.equal(areas[0].box.h, 80, 'the Textarea is no longer 80 tall');
+assert.equal(areas[0].layout.hug.cross, true, 'the Textarea no longer hugs its cross axis');
+
+const areaHTML = renderHTML(textareaIR);
+const areaRule = [...areaHTML.matchAll(/\.(textarea(?:-\d+)?) \{([^}]*)\}/g)].map((m) => m[0])
+  .find((r) => r.includes('height: 80px'));
+assert.ok(areaRule, 'the Textarea has no rule of its own');
+assert.match(areaRule, /height: 80px/, 'the measured height is gone, so the box collapses to its content');
+assert.match(areaRule, /min-height: 80px/, 'the measured height is still a ceiling rather than a floor');
+// a column hugs its width instead, and neither axis is released on a fixed box
+const columnHug = [];
+(function walk(n) {
+  if (n.layout?.hug?.cross && n.layout.direction === 'column') columnHug.push(n);
+  n.children?.forEach(walk);
+})(toIR(frames.find((f) => f.name === 'Input Field'), message.blobs, { symbols, variables }));
+if (columnHug.length) {
+  const html = renderHTML(toIR(frames.find((f) => f.name === 'Input Field'), message.blobs, { symbols, variables }));
+  assert.match(html, /min-width: \d/, 'a column that hugs its width got no floor');
+}
+
 console.log(`ok — reach ${reach.text}/${reach.textTotal} text, ${reach.slack} slack; ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
   `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames, ` +
   `${authored.length} tokens named from variables, ${catalogue.variables.length} variables in ${catalogue.sets.length} sets`);

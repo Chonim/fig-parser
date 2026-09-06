@@ -71,6 +71,19 @@ function boxRules(node, parentLayout) {
   // nobody ever rendered — honouring it put a 128px headline in a 62px slot and ran
   // it a thousand pixels past its frame. Four such nodes across the two samples.
   rules.push(['width', px(node.box.w)], ['height', px(node.box.h)]);
+  // stackCounterSizing says this axis was measured from the contents rather than
+  // chosen. Rendering that as fit-content collapsed the boxes — a 240×80 Textarea
+  // holds one 16px line, so its content is 40 — so the measurement stays and only
+  // stops being a ceiling. A longer string or a wider font grows the box instead of
+  // spilling out of it, and at the design's own size nothing moves.
+  if (node.layout?.hug?.cross) {
+    rules.push([node.layout.direction === 'column' ? 'min-width' : 'min-height',
+      px(node.layout.direction === 'column' ? node.box.w : node.box.h)]);
+  }
+  if (node.layout?.hug?.main) {
+    rules.push([node.layout.direction === 'column' ? 'min-height' : 'min-width',
+      px(node.layout.direction === 'column' ? node.box.h : node.box.w)]);
+  }
   // On the axes textAutoResize names, the stored box is Figma's cache of the content,
   // and in these files the cache is wrong in both directions: an instance whose font
   // was overridden outgrew the master's copy (16px Inter in a 29px slot), while other
