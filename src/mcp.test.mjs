@@ -1,22 +1,18 @@
 import assert from 'node:assert/strict';
+import { PRODUCT, LIBRARY as MATSQ, requireSamples } from './samples.mjs';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, symlinkSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { measureReach } from './reach.mjs';
 import { TOOLS } from './mcp.mjs';
 
-const SAMPLE = 'samples/kyowon-full.fig';
+const SAMPLE = PRODUCT;
 const FRAME = '온라인학습_Login';
 // the other sample is the only one with components and variables, and mcp.mjs
 // builds both indexes itself — nothing else here would notice if it built them
 // from the wrong thing, or dropped one entirely
-const LIBRARY = 'samples/matsq.fig';
-if (!existsSync(SAMPLE)) {
-  // A skip and a pass are indistinguishable to anything reading the exit code, so
-  // on CI an absent sample is a failure rather than a quiet green run.
-  console.log(`skip — ${SAMPLE} not present`);
-  process.exit(process.env.CI ? 1 : 0);
-}
+const LIBRARY = MATSQ;
+requireSamples(SAMPLE, MATSQ);
 
 const proc = spawn('node', ['src/mcp.mjs'], { stdio: ['pipe', 'pipe', 'inherit'] });
 const seen = [];

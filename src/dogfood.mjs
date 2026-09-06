@@ -1,18 +1,14 @@
 // Same goal, two toolsets: learn every string in one frame and where it sits.
 // Counts the tool calls each takes.
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { LIBRARY, requireSamples } from './samples.mjs';
 import { parseFigFile, buildTree, collectFrames } from './parse.mjs';
 import { toIR, symbolIndex, variableIndex } from './ir.mjs';
 
-const FILE = 'samples/matsq.fig';
+const FILE = LIBRARY;
 const FRAME = '97:3081';
 
-if (!existsSync(FILE)) {
-  // a skip and a pass are indistinguishable to anything reading the exit code
-  console.log(`skip — ${FILE} not present`);
-  process.exit(process.env.CI ? 1 : 0);
-}
+requireSamples(FILE);
 
 const { message } = parseFigFile(FILE);
 const roots = buildTree(message.nodeChanges);

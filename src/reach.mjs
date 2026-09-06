@@ -9,7 +9,7 @@
  *   pnpm reach [file.fig]
  */
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { BOTH, requireSamples } from './samples.mjs';
 import { parseFigFile, buildTree, collectFrames } from './parse.mjs';
 import { toIR, symbolIndex, variableIndex } from './ir.mjs';
 
@@ -85,14 +85,9 @@ export async function measureReach(file) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const files = process.argv.slice(2);
-  const targets = files.length ? files : ['samples/kyowon-full.fig', 'samples/matsq.fig'];
-  let any = false;
+  const targets = files.length ? files : BOTH;
+  requireSamples(targets);
   for (const file of targets) {
-    if (!existsSync(file)) {
-      console.log(`skip — ${file} not present`);
-      continue;
-    }
-    any = true;
     const r = await measureReach(file);
     console.log(
       `\n${r.file} — ${r.frames} frames\n` +
@@ -103,6 +98,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     );
     for (const f of r.slackFrames) console.log(`    ${f.id}  ${f.name}  ${f.bytes} B`);
   }
-  // a skip and a pass look identical to anything reading the exit code
-  if (!any) process.exit(process.env.CI ? 1 : 0);
 }

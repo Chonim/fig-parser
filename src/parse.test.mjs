@@ -1,16 +1,12 @@
 import assert from 'node:assert/strict';
+import { PRODUCT, requireSamples } from './samples.mjs';
 import { existsSync } from 'node:fs';
 import { parseFigFile, buildTree, decodePathBlob, collectFrames } from './parse.mjs';
 import { toIR, extractTokens } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
-const SAMPLE = 'samples/kyowon-full.fig';
-if (!existsSync(SAMPLE)) {
-  // A skip and a pass are indistinguishable to anything reading the exit code, so
-  // on CI an absent sample is a failure rather than a quiet green run.
-  console.log(`skip — ${SAMPLE} not present`);
-  process.exit(process.env.CI ? 1 : 0);
-}
+const SAMPLE = PRODUCT;
+requireSamples(SAMPLE);
 
 const { version, message } = parseFigFile(SAMPLE);
 assert.equal(message.type, 'NODE_CHANGES');

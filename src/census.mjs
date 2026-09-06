@@ -8,8 +8,10 @@
  */
 import { parseFigFile, buildTree, decodePathBlob, collectFrames } from './parse.mjs';
 import { toIR, isIconCluster, HANDLED, symbolIndex, variableIndex } from './ir.mjs';
+import { PRODUCT, requireSamples } from './samples.mjs';
 
-const FILE = process.argv[2] ?? 'samples/kyowon-full.fig';
+const FILE = process.argv[2] ?? PRODUCT;
+requireSamples(FILE);
 
 const IGNORED = {
   'invisible nodes (visible: false)': 'deliberate — nothing to render',

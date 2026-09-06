@@ -26,6 +26,7 @@ import { join, resolve } from 'node:path';
 import { PNG } from 'pngjs';
 import pixelmatch from 'pixelmatch';
 import { parseFigFile, buildTree, collectFrames } from './parse.mjs';
+import { BOTH, requireSamples } from './samples.mjs';
 import { toIR, symbolIndex, variableIndex } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
@@ -160,10 +161,10 @@ function report(file, rows, fonts) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const files = process.argv.slice(2);
-  const targets = files.length ? files : ['samples/kyowon-full.fig', 'samples/matsq.fig'];
+  const targets = files.length ? files : BOTH;
+  requireSamples(targets);
   let compared = 0;
   for (const file of targets) {
-    if (!existsSync(file)) { console.log(`skip — ${file} not present`); continue; }
     if (!existsSync(refDir(file))) { console.log(`skip — no references in ${refDir(file)}/`); continue; }
     const { rows, fonts } = diffFile(file);
     report(file, rows, fonts);

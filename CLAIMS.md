@@ -23,19 +23,22 @@
 
 | # | 주장 | 문서 | 유형 | 담당 | 상태 |
 | --- | --- | --- | --- | --- | --- |
-| A1 | `pnpm install` | README:24 | 셸 | 3-1 | 미검증 |
-| A2 | `pnpm test` — parse + components + mcp 순서 | README:34 CLAUDE:17 TASKS:16 | 셸 | 3-1 | 미검증 |
-| A3 | `pnpm mcp` — stdio MCP 서버 | README:33 CLAUDE:25 | 셸 | 3-1 | 미검증 |
-| A4 | `pnpm census [file.fig]` | README:35 CLAUDE:19 TASKS:17 | 셸 | 3-1 | 미검증 |
-| A5 | `pnpm reach [file.fig]` | README:36 CLAUDE:20 | 셸 | 3-1 | 미검증 |
-| A6 | `pnpm diff [file.fig]` | README:37 CLAUDE:21 REFS:17 | 셸 | 3-1 | 미검증 |
-| A7 | `pnpm dogfood` | README:38 CLAUDE:22 | 셸 | 3-1 | 미검증 |
-| A8 | `node src/cli.mjs <fig>` — 프레임 목록 | README:48 CLAUDE:23 | 셸 | 3-1 | 미검증 |
-| A9 | `node src/cli.mjs <fig> <frame> <out>` — HTML+ir.json+assets | README:49 CLAUDE:24 | 셸 | 3-1 | 미검증 |
-| A10 | `node src/parse.test.mjs` — 스위트 하나만 | CLAUDE:18 | 셸 | 3-1 | 미검증 |
+| A1 | `pnpm install` | README:24 | 셸 | 3-1 | 검증(docs.test: 9개 명령 skip/CI) |
+| A2 | `pnpm test` — parse + components + mcp 순서 | README:34 CLAUDE:17 TASKS:16 | 셸 | 3-1 | 검증(docs.test: 9개 명령 skip/CI) |
+| A3 | `pnpm mcp` — stdio MCP 서버 | README:33 CLAUDE:25 | 셸 | 3-1 | 검증(docs.test: 9개 명령 skip/CI) |
+| A4 | `pnpm census [file.fig]` | README:35 CLAUDE:19 TASKS:17 | 셸 | 3-1 | 검증(docs.test: 9개 명령 skip/CI) |
+| A5 | `pnpm reach [file.fig]` | README:36 CLAUDE:20 | 셸 | 3-1 | 검증(docs.test: 9개 명령 skip/CI) |
+| A6 | `pnpm diff [file.fig]` | README:37 CLAUDE:21 REFS:17 | 셸 | 3-1 | 검증(docs.test: 9개 명령 skip/CI) |
+| A7 | `pnpm dogfood` | README:38 CLAUDE:22 | 셸 | 3-1 | 검증(docs.test: 9개 명령 skip/CI) |
+| A8 | `node src/cli.mjs <fig>` — 프레임 목록 | README:48 CLAUDE:23 | 셸 | 3-1 | 검증(docs.test: 9개 명령 skip/CI) |
+| A9 | `node src/cli.mjs <fig> <frame> <out>` — HTML+ir.json+assets | README:49 CLAUDE:24 | 셸 | 3-1 | 검증(docs.test: 9개 명령 skip/CI) |
+| A10 | `node src/parse.test.mjs` — 스위트 하나만 | CLAUDE:18 | 셸 | 3-1 | 검증(docs.test: 9개 명령 skip/CI) |
 
 부수 주장: **A11** "`pnpm mcp` 말고는 샘플 없으면 skip, `CI=1`이면 exit 1" (README:41, CLAUDE:27).
 이번 오류 3건 중 하나가 이것이었다 — `dogfood`만 예외로 throw했다.
+**상태: 검증** — 규약이 `src/samples.mjs` 한 곳에 있고, `docs.test`가 `SAMPLES_DIR`을 빈
+디렉터리로 두고 9개 명령을 전부 실행해 `skip` 출력과 `CI=1` exit 1을 확인한다.
+`census`는 애초에 가드가 아예 없었고 이때 드러났다.
 
 ## B. 도구 호출 예시 — 6개
 

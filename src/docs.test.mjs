@@ -1,14 +1,12 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { workedPass, START, END } from './worked-pass.mjs';
+import { BOTH, requireSamples } from './samples.mjs';
 
-const SAMPLES = ['samples/kyowon-full.fig', 'samples/matsq.fig'];
-const missing = SAMPLES.find((f) => !existsSync(f));
-if (missing) {
-  // a skip and a pass are indistinguishable to anything reading the exit code
-  console.log(`skip — ${missing} not present`);
-  process.exit(process.env.CI ? 1 : 0);
-}
+requireSamples(BOTH);
 
 const readme = readFileSync('README.md', 'utf8');
 
@@ -40,4 +38,29 @@ if (!existsSync('refs')) {
 }
 assert.match(readFileSync('.gitignore', 'utf8'), /^samples\/\*\.fig$/m, 'the samples are no longer gitignored');
 
-console.log(`ok — worked pass matches, ${inREADME.split('\n').length} generated lines`);
+// --- every command skips when the samples are not there ---
+// The documents promise it and dogfood did not do it. Rather than moving the files,
+// the sample directory is pointed at an empty one, which is what the entry points read.
+const empty = mkdtempSync(join(tmpdir(), 'fig-nosamples-'));
+const COMMANDS = [
+  ['node', 'src/parse.test.mjs'],
+  ['node', 'src/components.test.mjs'],
+  ['node', 'src/mcp.test.mjs'],
+  ['node', 'src/docs.test.mjs'],
+  ['node', 'src/census.mjs'],
+  ['node', 'src/reach.mjs'],
+  ['node', 'src/diff.mjs'],
+  ['node', 'src/dogfood.mjs'],
+  ['node', 'src/worked-pass.mjs'],
+];
+for (const [cmd, ...args] of COMMANDS) {
+  const run = (env) => spawnSync(cmd, args, { encoding: 'utf8', env: { ...process.env, SAMPLES_DIR: empty, ...env } });
+  const quiet = run({ CI: '' });
+  assert.match(`${quiet.stdout}${quiet.stderr}`, /^skip — /m, `${args[0]} does not skip without samples: ${(quiet.stderr || quiet.stdout).split('\n')[0]}`);
+  assert.equal(quiet.status, 0, `${args[0]} exited ${quiet.status} while skipping`);
+  const strict = run({ CI: '1' });
+  assert.equal(strict.status, 1, `${args[0]} exited ${strict.status} under CI=1 with no samples`);
+}
+rmSync(empty, { recursive: true, force: true });
+
+console.log(`ok — worked pass matches, ${inREADME.split('\n').length} generated lines, ${COMMANDS.length} commands skip cleanly`);

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { LIBRARY, requireSamples } from './samples.mjs';
 import { existsSync } from 'node:fs';
 import { parseFigFile, buildTree, collectFrames } from './parse.mjs';
 import { toIR, symbolIndex, variableIndex, extractTokens, readVariables } from './ir.mjs';
@@ -7,13 +8,8 @@ import { measureReach } from './reach.mjs';
 
 // The other sample has no components and no auto-layout, so these paths need
 // a design-system file to be checked against at all.
-const SAMPLE = 'samples/matsq.fig';
-if (!existsSync(SAMPLE)) {
-  // A skip and a pass are indistinguishable to anything reading the exit code, so
-  // on CI an absent sample is a failure rather than a quiet green run.
-  console.log(`skip — ${SAMPLE} not present`);
-  process.exit(process.env.CI ? 1 : 0);
-}
+const SAMPLE = LIBRARY;
+requireSamples(SAMPLE);
 
 const { message } = parseFigFile(SAMPLE);
 const roots = buildTree(message.nodeChanges);
