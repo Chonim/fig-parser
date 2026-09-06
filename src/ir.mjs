@@ -126,25 +126,39 @@ function isIconCluster(node) {
   return node.children.every(isIconCluster);
 }
 
+const strokeColor = (node) => {
+  const paint = node.strokePaints?.find((p) => p.visible !== false && p.type === 'SOLID');
+  return paint && cssColor(paint.color, paint.opacity ?? 1);
+};
+
 function collectPaths(node, blobs, dx, dy, out) {
   const x = dx + (node.transform?.m02 ?? 0);
   const y = dy + (node.transform?.m12 ?? 0);
-  for (const geom of node.fillGeometry ?? []) {
-    const blob = blobs[geom.commandsBlob];
-    if (!blob) continue;
-    const norm = node.vectorData?.normalizedSize;
-    const sx = norm?.x ? (node.size?.x ?? norm.x) / norm.x : 1;
-    const sy = norm?.y ? (node.size?.y ?? norm.y) / norm.y : 1;
-    try {
-      out.push({
-        d: pathToSvg(decodePathBlob(blob.bytes), sx, sy),
-        // no paint at all -> the shape is a bounds/mask helper, not ink
-        fill: solidFill(node) ?? (node.fillPaints?.some((f) => f.visible !== false) ? 'currentColor' : 'none'),
-        transform: x || y ? `translate(${round(x)} ${round(y)})` : undefined,
-        rule: geom.windingRule === 'ODD' ? 'evenodd' : undefined,
-      });
-    } catch {
-      // vector-network-only shape, nothing renderable here — skip it
+  const transform = x || y ? `translate(${round(x)} ${round(y)})` : undefined;
+
+  // Figma stores strokes already outlined into fillable regions, so both geometries
+  // are painted the same way — only the paint they take differs.
+  const geometries = [
+    // no paint at all -> the shape is a bounds/mask helper, not ink
+    [node.fillGeometry, solidFill(node) ?? (node.fillPaints?.some((f) => f.visible !== false) ? 'currentColor' : 'none')],
+    [node.strokeGeometry, strokeColor(node) ?? 'none'],
+  ];
+
+  for (const [list, fill] of geometries) {
+    if (fill === 'none') continue;
+    for (const geom of list ?? []) {
+      const blob = blobs[geom.commandsBlob];
+      if (!blob) continue;
+      try {
+        out.push({
+          d: pathToSvg(decodePathBlob(blob.bytes)),
+          fill,
+          transform,
+          rule: geom.windingRule === 'ODD' ? 'evenodd' : undefined,
+        });
+      } catch {
+        // vector-network-only shape, nothing renderable here — skip it
+      }
     }
   }
   for (const child of node.children ?? []) collectPaths(child, blobs, x, y, out);

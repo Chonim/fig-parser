@@ -49,9 +49,17 @@ assert.ok(byRole('image').length >= 1, 'no image node');
 const icon = byRole('icon').sort((a, b) => b.asset.paths.length - a.asset.paths.length)[0];
 assert.ok(icon?.asset.paths.length > 10, 'logo cluster did not collapse into an SVG');
 assert.ok(icon.asset.paths.every((p) => p.d.startsWith('M')), 'bad path data');
-// paths live in the cluster's own space, so they must fit its viewBox
-const xs = icon.asset.paths.flatMap((p) => (p.transform?.match(/-?[\d.]+/g) ?? [0, 0]).map(Number));
-assert.ok(Math.max(...xs) <= Math.max(icon.box.w, icon.box.h) + 1, 'icon paths escape their viewBox');
+// paths live in the cluster's own space, so they must fill its viewBox rather than
+// hide in a corner — the failure mode when path coords get scaled by normalizedSize
+const extent = icon.asset.paths.flatMap((p) => {
+  const [ox = 0, oy = 0] = (p.transform?.match(/-?[\d.]+/g) ?? []).map(Number);
+  const nums = p.d.match(/-?[\d.]+/g).map(Number);
+  return nums.map((v, i) => (i % 2 ? v + oy : v + ox));
+});
+const reach = Math.max(...extent);
+const span = Math.max(icon.box.w, icon.box.h);
+assert.ok(reach <= span + 1, `icon paths escape their viewBox (${reach} > ${span})`);
+assert.ok(reach > span * 0.5, `icon paths collapsed into a corner (${reach} of ${span})`);
 
 const label = byRole('text').find((n) => n.text.content === '로그인');
 assert.equal(label.text.weight, 600, 'SemiBold should map to 600');

@@ -92,10 +92,12 @@ export function decodePathBlob(bytes) {
   return parts;
 }
 
-/** decoded parts -> SVG `d`, scaled from the node's normalizedSize into its real size */
-export function pathToSvg(parts, scaleX = 1, scaleY = 1) {
+/**
+ * decoded parts -> SVG `d`. Coordinates already sit in the node's own size space,
+ * so they need no scaling — vectorData.normalizedSize refers to something else
+ * (the source artboard) and using it as a divisor shrinks the path to nothing.
+ */
+export function pathToSvg(parts) {
   const num = (v) => Math.round(v * 1000) / 1000;
-  return parts
-    .map(({ cmd, args }) => cmd + args.map((v, i) => num(v * (i % 2 ? scaleY : scaleX))).join(' '))
-    .join('');
+  return parts.map(({ cmd, args }) => cmd + args.map(num).join(' ')).join('');
 }
