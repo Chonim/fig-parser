@@ -112,6 +112,30 @@ const html5 = renderHTML(lqIR);
 assert.ok(html5.includes('<span style="font-size:40px">58</span>'), 'run span not rendered');
 assert.ok(html5.includes('Noto+Sans+KR'), 'font actually used was never linked');
 
+// A text node centred vertically becomes a flex container, and every run inside it
+// would become its own flex item — laid side by side, with the newlines between them
+// dropped. The empty-state notice is two lines in one bold+regular string; as separate
+// items it rendered as one line wide enough to be clipped at both ends.
+const empty = collectFrames(roots).find((f) => f.id === '2097:918');
+const emptyHTML = renderHTML(toIR(empty, message.blobs));
+const notice = emptyHTML.match(/<p class="([^"]*배정된[^"]*)">((?:.|\n)*?)<\/p>/);
+assert.ok(notice, 'the two-line empty-state notice is no longer in the render');
+const noticeRules = emptyHTML.match(new RegExp(`\\.${notice[1]} \\{([^}]*)\\}`));
+assert.match(noticeRules[1], /display: flex/, 'this text is no longer a flex container — pick another case');
+// count what sits directly inside the <p>: anything past the first is another flex item
+let depth = 0;
+let topLevel = 0;
+for (const tok of notice[2].split(/(<[^>]+>)/).filter((x) => x !== '')) {
+  if (tok.startsWith('</')) depth -= 1;
+  else if (tok.startsWith('<')) { if (depth === 0) topLevel += 1; depth += 1; }
+  else if (depth === 0 && tok.trim()) topLevel += 1;
+}
+assert.equal(
+  topLevel,
+  1,
+  'a vertically centred text put its runs directly in the flex container, so each became its own item and the line breaks between them were dropped',
+);
+
 // --- transforms ---
 // ARCHIVE carries rotated carets; identity nodes must stay untouched so that
 // adding transform support cannot silently reflow everything else

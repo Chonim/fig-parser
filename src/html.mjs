@@ -11,6 +11,12 @@ const backgroundFit = (mode) => {
 const RUN_CSS = { size: (v) => `font-size:${v}px`, weight: (v) => `font-weight:${v}`, family: (v) => `font-family:"${v}"`, color: (v) => `color:${v}` };
 
 function textBody(text) {
+  const body = runSpans(text);
+  // vertical centring makes the element a flex container; keep its content one item
+  return text.verticalAlign ? `<span>${body}</span>` : body;
+}
+
+function runSpans(text) {
   if (!text.runs) return esc(text.content);
   return text.runs
     .map((run) => {
@@ -117,8 +123,10 @@ function styleRules(node, parentLayout, assetUrl) {
       rules.push(['overflow', 'hidden'], ['text-overflow', 'ellipsis']);
     }
     if (t.decoration) rules.push(['text-decoration', t.decoration]);
-    // a flex container with only text still aligns that text as one anonymous item,
-    // but text-align no longer positions it, so mirror it onto the main axis
+    // a flex container lays every child out as its own item, so the runs inside go in
+    // one wrapper (see textBody) — otherwise they sit side by side and the newlines
+    // between them are dropped. text-align no longer positions the wrapper, so mirror
+    // it onto the main axis
     if (t.verticalAlign) {
       rules.push(['display', 'flex'], ['align-items', t.verticalAlign]);
       if (t.align !== 'left') rules.push(['justify-content', t.align === 'right' ? 'flex-end' : t.align]);
