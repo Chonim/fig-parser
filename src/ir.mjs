@@ -29,6 +29,15 @@ export const HANDLED = {
   effects: { handled: new Set(['DROP_SHADOW', 'INNER_SHADOW']), approximated: new Set() },
   blendModes: new Set(['NORMAL', 'PASS_THROUGH']),
   imageScaleModes: new Set(['FILL', 'FIT', 'STRETCH', 'TILE']),
+  // variableConsumptionMap fields the IR reports as tokens; the corner and edge
+  // variants beyond the first are the same value in this file and would only repeat
+  consumedFields: new Set([
+    'RECTANGLE_TOP_LEFT_CORNER_RADIUS', 'RECTANGLE_TOP_RIGHT_CORNER_RADIUS',
+    'RECTANGLE_BOTTOM_LEFT_CORNER_RADIUS', 'RECTANGLE_BOTTOM_RIGHT_CORNER_RADIUS',
+    'STACK_SPACING', 'STACK_PADDING_TOP', 'STACK_PADDING_RIGHT', 'STACK_PADDING_BOTTOM', 'STACK_PADDING_LEFT',
+    'BORDER_TOP_WEIGHT', 'BORDER_RIGHT_WEIGHT', 'BORDER_BOTTOM_WEIGHT', 'BORDER_LEFT_WEIGHT',
+    'FONT_SIZE', 'FONT_FAMILY', 'LINE_HEIGHT', 'WIDTH',
+  ]),
 };
 const WEIGHTS = { Thin: 100, ExtraLight: 200, Light: 300, Regular: 400, Medium: 500, SemiBold: 600, Bold: 700, ExtraBold: 800, Black: 900 };
 
@@ -652,6 +661,40 @@ const slug = (name) => name.toLowerCase().replace(/[^\w가-힣]+/g, '-').replace
 /** "Primary/Purple-0" -> "--primary-purple-0" */
 export const tokenName = (name) => `--${slug(name)}`;
 
+/**
+ * Figma binds more than colour to a variable: corner radii, auto-layout padding and
+ * spacing, border weights and type all carry a variableConsumptionMap entry naming
+ * the variable that feeds them. Those are the numbers a stylesheet wants as tokens.
+ *
+ * Entries whose alias is an assetRef point into a library this file does not
+ * contain, so they resolve to nothing and are left out.
+ */
+const CONSUMED_FIELDS = {
+  RECTANGLE_TOP_LEFT_CORNER_RADIUS: 'radius',
+  STACK_SPACING: 'gap',
+  STACK_PADDING_TOP: 'paddingTop',
+  STACK_PADDING_RIGHT: 'paddingRight',
+  STACK_PADDING_BOTTOM: 'paddingBottom',
+  STACK_PADDING_LEFT: 'paddingLeft',
+  BORDER_TOP_WEIGHT: 'borderWidth',
+  FONT_SIZE: 'fontSize',
+  FONT_FAMILY: 'fontFamily',
+  LINE_HEIGHT: 'lineHeight',
+  WIDTH: 'width',
+};
+
+function consumedTokens(node, variables) {
+  const out = {};
+  for (const e of node.variableConsumptionMap?.entries ?? []) {
+    const slot = CONSUMED_FIELDS[e.variableField];
+    const alias = e.variableData?.value?.alias?.guid;
+    if (!slot || !alias) continue;
+    const name = variables?.get(guidKey(alias));
+    if (name) out[slot] = tokenName(name);
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
 const paintVariable = (paint, variables) => {
   const alias = paint?.colorVar?.value?.alias?.guid;
   return alias && variables?.get(guidKey(alias));
@@ -831,6 +874,8 @@ export function toIR(node, blobs, options = {}) {
   const box = { x: round(t.m02), y: round(t.m12), w: round(node.size?.x ?? 0), h: round(node.size?.y ?? 0) };
   const transform = transformCss(t);
   const base = { id: node.id, name: node.name, box };
+  const bound = consumedTokens(node, variables);
+  if (bound) base.tokens = bound;
   if (options.instanceOf) {
     base.component = {
       name: options.masterName ?? node.name,

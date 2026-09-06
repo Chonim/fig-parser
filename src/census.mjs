@@ -14,6 +14,7 @@ const FILE = process.argv[2] ?? 'samples/kyowon-full.fig';
 const IGNORED = {
   'invisible nodes (visible: false)': 'deliberate — nothing to render',
   'vector-network-only blobs': 'deliberate — duplicate of fill/stroke geometry (see TASKS.md)',
+  'variable binding into an external library — unresolvable': 'deliberate — the variable lives in a library this file does not contain',
 };
 
 const maskFitsParent = new Set();
@@ -119,6 +120,13 @@ for (const frame of frames) {
 
     // a mask whose shape is not simply the parent's box still has no representation
     if (node.mask && !maskFitsParent.has(node)) bump('mask with a shape of its own — not clipped');
+
+    // a variable bound to something the IR does not carry a token slot for
+    for (const e of node.variableConsumptionMap?.entries ?? []) {
+      if (e.variableData?.value?.alias?.assetRef) { bump('variable binding into an external library — unresolvable'); continue; }
+      if (!e.variableData?.value?.alias?.guid) continue;
+      if (!HANDLED.consumedFields.has(e.variableField)) bump(`variable bound to ${e.variableField} — no token slot`);
+    }
 
     // a node whose only geometry is an undecodable blob is genuinely unrenderable
     const geoms = [...(node.fillGeometry ?? []), ...(node.strokeGeometry ?? [])];

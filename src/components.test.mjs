@@ -140,6 +140,35 @@ const throughWrapper = repeats.find((n) =>
 assert.ok(throughWrapper, 'no repeat was found across a wrapped sibling');
 assert.ok(throughWrapper.layout.repeat.count >= 3, 'repeat below its own threshold');
 
+// --- numbers bound to variables come back as tokens, not literals ---
+// Colour was the only binding being read. Figma also binds corner radii, auto-layout
+// padding and spacing, border weights and type, which is most of a stylesheet.
+let bound = 0;
+const slots = new Set();
+for (const f of frames) {
+  const ir = toIR(f, message.blobs, { symbols, variables });
+  if (!ir) continue;
+  (function walk(n) {
+    if (n.tokens) { bound++; for (const k of Object.keys(n.tokens)) slots.add(k); }
+    n.children?.forEach(walk);
+  })(ir);
+}
+assert.ok(bound > 500, `only ${bound} nodes report a bound number`);
+for (const slot of ['radius', 'gap', 'paddingTop', 'fontSize']) {
+  assert.ok(slots.has(slot), `nothing reports a bound ${slot}: ${[...slots]}`);
+}
+// and they are names the author chose, not invented ones
+const anyToken = (() => {
+  for (const f of frames) {
+    const ir = toIR(f, message.blobs, { symbols, variables });
+    if (!ir) continue;
+    let hit;
+    (function walk(n) { if (!hit && n.tokens?.radius) hit = n.tokens.radius; n.children?.forEach(walk); })(ir);
+    if (hit) return hit;
+  }
+})();
+assert.match(anyToken, /^--[a-z0-9-]+$/, `a bound token is not a css custom property: ${anyToken}`);
+
 // --- a component's variant is stated, not left to be guessed from a repeat count ---
 // Three states of one component sat side by side and the only signal was
 // layout.repeat, which reads as a three-column grid: wrong markup, wrong a11y.
