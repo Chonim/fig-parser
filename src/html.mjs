@@ -47,6 +47,10 @@ function boxRules(node, parentLayout) {
     rules.push(['position', 'absolute'], ['left', px(node.box.x)], ['top', px(node.box.y)]);
   }
   node.positioned = positioned;
+  // Sizes stay as Figma measured them, even where layout.hug says the frame sizes
+  // itself: fit-content collapses multi-line fields that Figma had resolved larger.
+  // That makes flex-grow and align-self inert here, which is the honest trade for a
+  // renderer whose job is to reproduce the design rather than to be responsive.
   rules.push(['width', px(node.box.w)], ['height', px(node.box.h)]);
   return rules;
 }

@@ -57,17 +57,24 @@ pnpm census    # 기본 kyowon-full, 인자로 다른 .fig 지정 가능
 `flex-wrap`/`grid` 레이아웃 모드 자체는 추론하지 않는다.
 컨테이너에 구분선·연결선이 섞여 있어 "무엇이 콘텐츠인가"를 가릴 근거가 없다.
 
-### 하드 사이징 vs hug
-`layout.hug`는 IR에 들어가지만 렌더러는 항상 측정된 고정 크기를 쓴다.
-그래서 `align-self: stretch`나 `flex-grow`가 실질적으로 무효다.
-기준선 렌더러로는 이게 정확하지만, 반응형 마크업을 뽑으려면 hug 축의 크기를 풀어야 한다.
+### 하드 사이징 vs hug — 시도했고 되돌림
+`layout.hug` 축을 `fit-content`로 풀어봤으나 **렌더가 깨진다.**
+Textarea Field 프레임에서 다중행 입력창이 100px → 48px로 붕괴했다.
+Figma가 확정한 측정값이 콘텐츠 크기보다 큰 경우(최소 높이 등)를 CSS가 재현하지 못한다.
 
-### VARIABLE — 색은 됐고, 나머지 타입이 남음
-`paint.colorVar.value.alias.guid` → VARIABLE `name`으로 색 토큰은 원본 이름을 쓴다
-(`--background-brand-default`). 바인딩이 없는 색만 사용처 기반 이름으로 대체.
+결론: 기준선 렌더러는 측정된 고정 크기를 유지한다. 그래서 `align-self`/`flex-grow`는
+CSS에서 무효지만 IR에는 남아 있고, 반응형 마크업을 쓸 모델이 그걸 보고 판단하면 된다.
+다시 시도한다면 hug 축에 `min-width`/`min-height`로 측정값을 깔고 크기를 푸는 방향.
 
-남은 것: `FLOAT`(간격·반지름), `STRING`, `BOOLEAN` 변수는 아직 안 읽는다.
-`variableSetID`별 모드(라이트/다크)도 미처리 — `variableDataValues`에 모드별 값이 들어있다.
+### VARIABLE — 완료
+`get_variables` 툴이 세트·모드·타입별 값을 전부 읽는다 (matsq 기준 14세트 581변수).
+색은 `paint.colorVar` 바인딩으로 원본 토큰명(`--background-brand-default`)을 쓰고,
+FLOAT는 px(단, weight/opacity/line-height는 무단위), 별칭은 `var(--원본)`으로 유지.
+모드는 세트별로 `:root` + `[data-<set>="<mode>"]` 블록.
+
+남은 것: 변수 바인딩이 **색에만** 붙어 있다. `radius`/`gap`/`padding`처럼 FLOAT 변수가
+바인딩된 속성은 IR에서 여전히 리터럴 값으로 나온다. 노드 쪽 바인딩 필드를 찾아
+`style.radius`를 `var(--radius-md)`로 낼 수 있으면 마크업 품질이 한 단계 오른다.
 
 ### 미처리 노드 타입
 `STICKY` `WIDGET` `CONNECTOR` `SHAPE_WITH_TEXT` `STAMP` — matsq에 소량 존재.
