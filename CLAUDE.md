@@ -140,7 +140,14 @@ These are pinned by tests. A red suite is usually one of these, not new code.
     covers a pixel down and right of Figma's export, and panels like it are on every screen —
     this alone was 523,871 differing pixels to 213,864. `outline` and an inset `box-shadow`
     paint the same ring without joining the layout, and both follow border-radius.
-15. **Figma calling a frame auto-layout does not make it a flex row.** Where the children it
+15. **A gradient is its handles, not its angle.** The stored matrix takes gradient space,
+    where the ramp runs (0,0)->(1,0), into the shape's unit square — apply it as given, do
+    not invert it. And CSS runs its ramp across the whole box along the angle, while Figma's
+    handles sit anywhere and are any length: the bookshelf plank's ramp is ~12,000x the
+    plank's width, so Figma paints it flat where reading the angle alone swept light to dark
+    across 9px. Project the handles onto the line CSS will use and place each stop where it
+    falls, outside 0-100% when that is where it lands.
+16. **Figma calling a frame auto-layout does not make it a flex row.** Where the children it
     recomputed overlap on the main axis — a filling label with icons drawn over its ends — flex
     would push them apart. The stack settings stay reported; the placement falls back to the
     coordinates. 32 boxes in the design-system file.

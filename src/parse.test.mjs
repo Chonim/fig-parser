@@ -546,6 +546,21 @@ assert.match(myPageHTML, /object-view-box: inset\(0% 9\.4[0-9]% 0% 9\.4[0-9]%\)/
 assert.equal((myPageHTML.match(/object-view-box[^;]*inset\(0% 0% 0% 0%\)/g) ?? []).length, 0,
   'an identity paint transform is being written out as a crop');
 
+// --- a gradient is its handles, not just its angle ---
+// CSS runs its ramp across the whole box along the given angle; Figma's handles can sit
+// anywhere and be any length. The bookshelf plank's ramp is some 12,000 times the
+// plank's own width, so Figma shows one flat colour where reading the angle alone
+// painted the whole light-to-dark sweep across 9 pixels. The stops land far outside
+// 0-100% here, which is what says the handles were read at all.
+const plank = (function find(n) {
+  if (n.id === '2110:28') return n;
+  for (const c of n.children ?? []) { const hit = find(c); if (hit) return hit; }
+  return null;
+})(toIR(collectFrames(roots).find((f) => f.id === '2102:20'), message.blobs));
+assert.ok(plank, 'the bookshelf plank is no longer 2110:28');
+const stops = [...plank.style.fill.matchAll(/(-?[\d.]+)%/g)].map((m) => Number(m[1]));
+assert.ok(stops.some((p) => p < -100 || p > 200), `the plank's ramp is being squeezed into its box: ${plank.style.fill}`);
+
 // --- a stroke does not move what is inside the node ---
 // A CSS `border` shifts the containing block of every absolutely-positioned descendant
 // in by its own width, whatever the box-sizing; Figma's stroke shifts nothing. The

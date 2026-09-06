@@ -131,31 +131,47 @@ function solidFill(node) {
   return paint && cssColor(paint.color, paint.opacity ?? 1);
 }
 
-const stopList = (paint) =>
+const stopList = (paint, place = (t) => t * 100) =>
   (paint.stops ?? [])
-    .map((s) => `${cssColor(s.color, paint.opacity ?? 1)} ${round(s.position * 100)}%`)
+    .map((s) => `${cssColor(s.color, paint.opacity ?? 1)} ${round(place(s.position))}%`)
     .join(', ');
 
 /**
  * Figma stores a gradient as the affine transform taking the shape's unit square into
- * gradient space, where the ramp runs (0,0)->(1,0). Invert it to get the ramp back in
- * shape space, then express that direction as a CSS angle (0deg = up, clockwise).
+ * gradient space, where the ramp runs (0,0)->(1,0). Invert it to get the ramp's two
+ * handles back in shape space.
+ *
+ * The angle alone is not the gradient. CSS always runs its ramp across the whole box
+ * along that angle, while Figma's handles can sit anywhere and be any length — the
+ * bookshelf plank's ramp is some 12,000 times the plank's own width, so Figma shows one
+ * flat colour where the angle-only reading painted the full light-to-dark sweep across
+ * 9px. So the handles are projected onto the line CSS will use and each stop is placed
+ * where it actually falls on it, which is often outside 0-100%. CSS allows that.
  */
 function linearGradient(paint, size) {
   const m = paint.transform;
   if (!m) return `linear-gradient(180deg, ${stopList(paint)})`;
-  const det = m.m00 * m.m11 - m.m01 * m.m10;
-  if (!det) return `linear-gradient(180deg, ${stopList(paint)})`;
-  const inv = (x, y) => ({
-    x: (m.m11 * (x - m.m02) - m.m01 * (y - m.m12)) / det,
-    y: (-m.m10 * (x - m.m02) + m.m00 * (y - m.m12)) / det,
-  });
-  const a = inv(0, 0);
-  const b = inv(1, 0);
-  const dx = (b.x - a.x) * (size?.x ?? 1);
-  const dy = (b.y - a.y) * (size?.y ?? 1);
+  const ramp = (x, y) => ({ x: m.m00 * x + m.m01 * y + m.m02, y: m.m10 * x + m.m11 * y + m.m12 });
+  const w = size?.x ?? 1;
+  const h = size?.y ?? 1;
+  const a = ramp(0, 0);
+  const b = ramp(1, 0);
+  const dx = (b.x - a.x) * w;
+  const dy = (b.y - a.y) * h;
+  if (!dx && !dy) return `linear-gradient(180deg, ${stopList(paint)})`;
   const deg = round((Math.atan2(dx, -dy) * 180) / Math.PI);
-  return `linear-gradient(${deg}deg, ${stopList(paint)})`;
+  // the CSS ramp is centred on the box and runs along (sin, -cos) for `deg`, its length
+  // the box projected onto that direction
+  const rad = (deg * Math.PI) / 180;
+  const ux = Math.sin(rad);
+  const uy = -Math.cos(rad);
+  const len = Math.abs(w * ux) + Math.abs(h * uy);
+  if (!len) return `linear-gradient(${deg}deg, ${stopList(paint)})`;
+  const along = (p) => ((p.x * w - w / 2) * ux + (p.y * h - h / 2) * uy);
+  const s0 = along(a);
+  const s1 = along(b);
+  const place = (t) => ((s0 + t * (s1 - s0)) / len + 0.5) * 100;
+  return `linear-gradient(${deg}deg, ${stopList(paint, place)})`;
 }
 
 /** one paint as a CSS value: solid colour, linear gradient, or a radial approximation */
@@ -381,8 +397,9 @@ function svgPaint(paint, defs) {
   const stops = paint.stops
     .map((st) => `<stop offset="${round(st.position * 100)}%" stop-color="${cssColor(st.color)}"${(st.color.a ?? 1) < 1 ? ` stop-opacity="${round(st.color.a)}"` : ''}/>`)
     .join('');
-  // gradient space runs (0,0)->(1,0); invert the transform to place it on the shape
-  const m = paint.transform ? matInv(paint.transform) : IDENTITY;
+  // the transform takes gradient space, where the ramp runs (0,0)->(1,0), into the
+  // shape's unit square — apply it as given (see linearGradient for what inverting cost)
+  const m = paint.transform ?? IDENTITY;
   const at = (x, y) => ({ x: num(m.m00 * x + m.m01 * y + m.m02), y: num(m.m10 * x + m.m11 * y + m.m12) });
   const a = at(0, 0);
   const b = at(1, 0);
