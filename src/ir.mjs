@@ -360,7 +360,17 @@ function repeatHint(kids) {
     (groups.get(sig) ?? groups.set(sig, []).get(sig)).push(k);
   }
   const best = [...groups.values()].sort((a, b) => b.length - a.length)[0];
-  return best?.length >= 3 ? { count: best.length, like: best[0].id } : undefined;
+  if (!(best?.length >= 3)) return undefined;
+
+  // how the repeats are actually arranged, measured rather than guessed: distinct
+  // start positions on each axis, within a tolerance that ignores hand-placement drift
+  const buckets = (values) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted.filter((v, i) => i === 0 || v - sorted[i - 1] > 8).length;
+  };
+  const columns = buckets(best.map((k) => k.box.x));
+  const rows = buckets(best.map((k) => k.box.y));
+  return { count: best.length, like: best[0].id, columns, rows };
 }
 
 /**

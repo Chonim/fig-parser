@@ -103,6 +103,11 @@ assert.ok(withRepeat.length >= 2, `expected repeated groups in LEARNING QUEST, f
 // Group 3095 is four identically sized cards stacked in a column
 const column = withRepeat.find((n) => n.name === 'Group 3095');
 assert.equal(column.layout.repeat.count, 4, 'card column repeat miscounted');
+assert.deepEqual(
+  { columns: column.layout.repeat.columns, rows: column.layout.repeat.rows },
+  { columns: 1, rows: 4 },
+  'a single stacked column was not measured as one',
+);
 assert.ok(column.children.some((c) => c.id === column.layout.repeat.like), 'repeat points at a node that is not a child');
 const sizes = new Set(column.children.map((c) => `${c.box.w}x${c.box.h}`));
 assert.equal(sizes.size, 1, 'repeat claimed for children of differing sizes');
