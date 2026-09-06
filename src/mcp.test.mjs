@@ -66,8 +66,21 @@ assert.ok(frames.some((f) => f.name === FRAME), 'login frame missing from list_f
 assert.ok(frames.every((f) => f.id && f.w && f.h));
 
 const full = await call('get_frame', { file: SAMPLE, frame: FRAME });
-const withPaths = await call('get_frame', { file: SAMPLE, frame: FRAME, includePaths: true });
-assert.ok(full.content[0].text.length * 3 < withPaths.content[0].text.length, 'path stripping barely helped');
+// Path data dwarfs everything else, which is why it is the first thing dropped. Asked
+// for on a subtree small enough to hold it, the difference is the whole point of
+// dropping it; asked for on the frame, the budget still wins — see below.
+const ICON = '2063:301';   // three paths, small enough that they fit
+const logo = await call('get_frame', { file: SAMPLE, frame: FRAME, select: ICON });
+const logoPaths = await call('get_frame', { file: SAMPLE, frame: FRAME, select: ICON, includePaths: true });
+assert.ok(!logo.content[0].text.includes('"d":'), 'path data is in the summary after all');
+assert.ok(
+  logo.content[0].text.length * 2 < logoPaths.content[0].text.length,
+  `path stripping barely helped: ${logo.content[0].text.length} B against ${logoPaths.content[0].text.length} B`,
+);
+// the logo's 63 paths are 39941 B on their own, so asking for them cannot be honoured
+const logoAsked = json(await call('get_frame', { file: SAMPLE, frame: FRAME, select: '2067:2', includePaths: true }));
+assert.ok(logoAsked.truncated, 'a request too big for the budget came back without saying so');
+const withPaths = logoPaths;
 const ir = json(full);
 assert.equal(ir.box.w, 1440);
 const icons = [];
@@ -277,6 +290,17 @@ for (const t of TOOLS) {
   }
 }
 
+// Whatever the arguments, a response has to fit the context it is going into. depth
+// and includePaths used to walk straight past the budget — 297366 B against 30000 —
+// which is not a switch a caller can be expected to know the cost of.
+for (const args of [{}, { depth: 99 }, { includePaths: true }, { depth: 99, includePaths: true }]) {
+  const res = await call('get_frame', { file: LIBRARY, frame: '2313:1353', ...args });
+  assert.ok(
+    res.content[0].text.length <= BUDGET,
+    `get_frame(${JSON.stringify(args)}) returned ${res.content[0].text.length} B, over the ${BUDGET} B budget`,
+  );
+}
+
 for (const c of claims) {
   const res = await call(c.tool, c.run);
   const body = res.content[0].text;
@@ -296,5 +320,5 @@ assert.ok(reach.nodes >= 794, `nodes reached fell to ${reach.nodes}/${reach.node
 assert.ok(reach.truncated <= 7, `${reach.truncated} frames truncated, was 7`);
 
 console.log(`ok — ${tools.length} tools, ${frames.length} frames, IR ${full.content[0].text.length} B ` +
-  `(vs ${withPaths.content[0].text.length} B with paths), ${files.length} assets, ` +
+  `(one icon is ${logo.content[0].text.length} B, ${withPaths.content[0].text.length} B with its paths), ${files.length} assets, ` +
   `reach ${reach.text}/${reach.textTotal} text ${reach.nodes}/${reach.nodeTotal} nodes`);

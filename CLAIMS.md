@@ -65,7 +65,7 @@ README:92–103 표와 `src/mcp.mjs`의 `describe()` 문자열. **모델이 읽�
 | C7 | `export_assets` — `{ hash: { file, usedBy } }` 반환 | 1-1 | 검증(주장 실행) |
 | C8 | `get_tokens.frame` — 생략하면 파일 전체 | 1-1 | 검증(주장 실행) |
 | C9 | `get_variables` — `set`(부분일치) `frame`(그 프레임이 묶은 것만) | 1-1 | 검증(주장 2건) |
-| C10 | `depth`/`includePaths`는 30KB 예산을 우회한다 | 1-1 | **버그로 판정** — 응답은 항상 예산 이하여야 한다 |
+| C10 | ~~`depth`/`includePaths`는 예산을 우회한다~~ | 1-1 | 삭제 — 버그였다. 이제 어떤 인자로도 예산을 넘지 않고, 못 담으면 `truncated`로 알린다 (mcp.test: 4가지 인자 조합) |
 | C11 | 도구는 7개다 | 1-2 | 검증(mcp.test.mjs: TOOLS 길이) |
 
 ### 1-1이 만든 규약

@@ -63,8 +63,9 @@ needs to know a 246×98 logo is present and can be exported. `fit` spends a 30KB
 of what costs least: path data first, then typography and paint, then whole nodes — content is
 the last thing to go, because a node that is not listed cannot be asked about while one listed
 without its font still carries its string. What it cannot fit becomes a stub naming the id to
-pass back as `select`, and `find_nodes` turns a string into that id in one call. Both `depth`
-and `includePaths` bypass the budget.
+pass back as `select`, and `find_nodes` turns a string into that id in one call. Nothing gets
+past the budget: `depth` and `includePaths` ask for a shape, and where that shape does not fit
+the answer is cut as usual and says so in `truncated`.
 
 The budget is spent by searching, not by estimating: `allot`'s cost model runs light, and the
 response it produces is **not monotonic** in the allowance it is given — skipping a node keeps

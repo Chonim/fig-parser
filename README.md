@@ -101,7 +101,9 @@ Every tool takes `file`, a path under `FIG_ROOT`. Beyond that:
 | `get_tokens` | `frame` (omit for the whole file) |
 | `get_variables` | `set` (substring), `frame` (only what that frame binds) |
 
-`depth` and `includePaths` bypass the 30KB budget; everything else respects it.
+Nothing bypasses the 30KB budget. `depth` and `includePaths` shape the answer, and where
+the shape you asked for does not fit, the usual cut answer comes back with `truncated` saying
+what it could not send — the login screen's logo is 63 paths and 39941 B on its own.
 
 ### A worked pass over one screen
 

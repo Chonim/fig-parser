@@ -397,19 +397,30 @@ tool(
           check: (v) => Array.isArray(v.children) && v.children.length > 0 && v.children.every(isStub) },
       ], 'omit for as deep as the budget allows').optional(),
       includePaths: claim(z.boolean(), 'inline raw SVG path data (large; usually you want export_assets instead)', [
-        { when: 'true', then: 'every bezier in the response, so it far outgrows the summary',
+        { when: 'true on a node whose paths fit the budget', then: 'every bezier of it',
+          run: { file: SAMPLE, frame: LOGIN, select: '2063:301', includePaths: true },
+          check: (v, body) => body.includes('"d":') },
+        { when: 'true where they do not fit', then: 'the usual cut answer, saying what it could not send',
           run: { file: SAMPLE, frame: LOGIN, includePaths: true },
-          check: (v, body) => body.includes('"d":') && body.length > 40_000 },
+          check: (v, body) => body.length <= BUDGET && Boolean(v.truncated) },
       ]).optional(),
     },
   },
   wrap(({ file, frame, select, depth, includePaths = false }) => {
     const root = frameIR(file, frame).ir;
     const node = select ? selectNode(root, select) : root;
-    // without an explicit depth, cut deep enough to stay usable in context —
-    // except when paths were explicitly asked for, where truncating defeats the point
-    if (depth) return forModel(node, depth, includePaths, false);
-    return includePaths ? forModel(node, Infinity, true, false) : fit(node);
+    // depth and includePaths shape the answer; they do not excuse it from fitting.
+    // They used to: `depth: 99` on a large frame came back at 297366 B against a
+    // 30000 budget, which is not a cost a caller can be expected to have guessed.
+    // Ask for what was requested, and if it does not fit, cut it the usual way and
+    // say so — the stubs still name the ids to come back for.
+    const asked = depth || includePaths
+      ? forModel(node, depth ?? Infinity, includePaths, false)
+      : null;
+    if (asked && serialize(asked).length <= BUDGET) return asked;
+    if (!asked) return fit(node);
+    const cut = fit(node);
+    return { ...cut, truncated: `the ${depth ? `depth ${depth}` : 'full path'} answer was ${serialize(asked).length} B against a ${BUDGET} B budget; ask for a smaller select` };
   }),
 );
 
