@@ -335,6 +335,9 @@ assert.match(flat.find((n) => n.style?.shadow?.includes('inset'))?.style.shadow,
 // --- HTML ---
 const html = renderHTML(ir);
 assert.ok(html.includes('<svg'), 'no inline svg');
+// the root is a flex item; without this it shrinks below its declared width and
+// the absolutely-positioned children stay put, tearing the design apart
+assert.match(html, /body > \* \{ flex-shrink: 0; \}/, 'the root frame can be shrunk by a narrow viewport');
 assert.ok(html.includes('로그인'), 'text content lost');
 assert.equal((html.match(/position: absolute;\n  position: relative;/g) ?? []).length, 0, 'conflicting position rules');
 // A class starting with a digit is not a valid CSS identifier: the rule is parsed

@@ -182,6 +182,11 @@ ${[...families].map(([f, w]) => `<link rel="stylesheet" href="${fontHref(f, w)}"
 <style>
 * { margin: 0; padding: 0; }
 body { background: #f4f4f4; display: flex; justify-content: center; }
+/* The frame is a flex item, and a flex item shrinks below its width by default.
+   Its children are absolutely positioned and keep their left/top, so any viewport
+   narrower than the design tears it apart — a 1440 window with a scrollbar is
+   already narrower. */
+body > * { flex-shrink: 0; }
 ${sheet.join('\n')}
 </style>
 </head>
