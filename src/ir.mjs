@@ -314,6 +314,10 @@ function textStyle(node) {
     // WIDTH_AND_HEIGHT means the box was sized to hug one line; letting it wrap
     // would reflow text Figma never wrapped
     nowrap: node.textAutoResize === 'WIDTH_AND_HEIGHT' || undefined,
+    // which axes Figma derives from the content rather than storing as the design's
+    // own decision — the box on those is a cache, and four of them in these files
+    // are stale enough to contradict the font they hold
+    autoSize: node.textAutoResize === 'WIDTH_AND_HEIGHT' ? 'both' : node.textAutoResize === 'HEIGHT' ? 'height' : undefined,
     textCase: CASE_CSS[node.textCase],
     decoration: DECORATION_CSS[node.textDecoration],
     // Figma clamps to a line count and ellipsises; without this the text overruns

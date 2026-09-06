@@ -54,6 +54,11 @@ function className(node, seen) {
   return name;
 }
 
+/** a derived text box too small for one line of the node's own font never got re-laid out */
+const staleTextBox = (node) =>
+  node.role === 'text' && node.text.autoSize
+  && node.box.h < node.text.size * node.text.content.split('\n').length * 0.8;
+
 function boxRules(node, parentLayout) {
   const rules = [];
   const positioned = node.role === 'backdrop' || parentLayout?.mode === 'absolute' || node.flexChild?.absolute;
@@ -65,6 +70,18 @@ function boxRules(node, parentLayout) {
   // itself: fit-content collapses multi-line fields that Figma had resolved larger.
   // That makes flex-grow and align-self inert here, which is the honest trade for a
   // renderer whose job is to reproduce the design rather than to be responsive.
+  //
+  // The exception is a text box that cannot hold one line of its own font. Figma
+  // re-lays auto-sized text out when it opens the file, so that box is a number
+  // nobody ever rendered — honouring it put a 128px headline in a 62px slot and ran
+  // it a thousand pixels past its frame. Four such nodes across the two samples.
+  if (staleTextBox(node)) {
+    // max-content, not just an absent width: as a flex item the element would otherwise
+    // be squeezed back to the parent's width and, being nowrap, spill out of it anyway
+    if (node.text.autoSize === 'both') rules.push(['width', 'max-content']);
+    else rules.push(['width', px(node.box.w)]);
+    return rules;
+  }
   rules.push(['width', px(node.box.w)], ['height', px(node.box.h)]);
   return rules;
 }
@@ -167,7 +184,12 @@ const fontHref = (family, weights) =>
   ?? `https://fonts.googleapis.com/css2?family=${family.replace(/ /g, '+')}`
      + `:wght@${[...new Set([400, ...weights])].sort((a, b) => a - b).join(';')}&display=swap`;
 
-export function renderHTML(root, { assetUrl = (h) => `assets/${h}.png`, title = root.name } = {}) {
+/**
+ * `nodeIds` stamps each element with the IR id it came from. Off by default — the
+ * baseline render is meant to be read, and the attribute is noise there — but a tool
+ * that has both the IR and the DOM needs a way to say which is which.
+ */
+export function renderHTML(root, { assetUrl = (h) => `assets/${h}.png`, title = root.name, nodeIds = false } = {}) {
   const sheet = [];
   const seen = new Set();
   const families = new Map();
@@ -188,8 +210,9 @@ export function renderHTML(root, { assetUrl = (h) => `assets/${h}.png`, title = 
     sheet.push(`.${cls} {\n${rules.map(([k, v]) => `  ${k}: ${v};`).join('\n')}\n}`);
     const pad = '  '.repeat(depth + 2);
 
-    if (node.role === 'text') return `${pad}<p class="${cls}">${textBody(node.text)}</p>`;
-    if (node.role === 'image') return `${pad}<img class="${cls}" src="${assetUrl(node.asset.hash)}" alt="${esc(node.name)}">`;
+    const id = nodeIds ? ` data-id="${esc(node.id)}"` : '';
+    if (node.role === 'text') return `${pad}<p class="${cls}"${id}>${textBody(node.text)}</p>`;
+    if (node.role === 'image') return `${pad}<img class="${cls}"${id} src="${assetUrl(node.asset.hash)}" alt="${esc(node.name)}">`;
     if (node.role === 'icon') {
       const defs = node.asset.defs ? `<defs>${node.asset.defs.join('')}</defs>` : '';
       const paths = node.asset.paths
@@ -198,10 +221,10 @@ export function renderHTML(root, { assetUrl = (h) => `assets/${h}.png`, title = 
       // Outlined strokes sit a little outside the node box they came from, and an
       // <svg> clips to its viewBox by default. The coordinate system is unscaled, so
       // letting it overflow paints the missing edges exactly where they belong.
-      return `${pad}<svg class="${cls}" viewBox="${node.asset.viewBox}" overflow="visible" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(node.name)}">${defs}${paths}</svg>`;
+      return `${pad}<svg class="${cls}"${id} viewBox="${node.asset.viewBox}" overflow="visible" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(node.name)}">${defs}${paths}</svg>`;
     }
     const kids = node.children.map((c) => walk(c, node.layout, depth + 1)).join('\n');
-    return `${pad}<div class="${cls}">\n${kids}\n${pad}</div>`;
+    return `${pad}<div class="${cls}"${id}>\n${kids}\n${pad}</div>`;
   };
 
   const body = walk(root, null, 0);

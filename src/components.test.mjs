@@ -323,6 +323,34 @@ assert.ok(google.some((h) => h.includes('family=Inter')), 'Inter was never linke
 // drops the whole family, so every request has to include 400 as a floor
 assert.ok(google.every((h) => /wght@(400|400;)/.test(h)), 'a font request omitted weight 400');
 
+// --- a text box that cannot hold its own font is stale ---
+// Figma re-lays an auto-sized text out when it opens the file, so a stored box smaller
+// than one line of the node's own font is a number nobody rendered. Honouring it puts a
+// 128px headline in a 62px box: on Intro - 01 the title ran 1004px past its own frame
+// and across the rest of the page.
+const intro = frames.find((f) => f.name === 'Intro - 01');
+const introIR = toIR(intro, message.blobs, { symbols, variables });
+const stale = [];
+(function walk(n) {
+  if (n.text && n.box.h < n.text.size * n.text.content.split('\n').length * 0.8) stale.push(n);
+  n.children?.forEach(walk);
+})(introIR);
+assert.ok(stale.length >= 2, `expected stale text boxes on Intro - 01, found ${stale.length}`);
+// the box is only a cache on the axes textAutoResize derives; a fixed-size text keeps
+// the size the design chose, however badly it fits
+assert.ok(stale.every((n) => n.text.autoSize), 'a fixed-size text was treated as a stale cache');
+assert.ok(introIR && stale.some((n) => n.text.autoSize === 'both'), 'no width-and-height text among them');
+
+const introHTML = renderHTML(introIR);
+for (const n of stale) {
+  const cls = introHTML.match(new RegExp(`\\.([\\w가-힣-]+) \\{[^}]*?\\}`, 'g'))
+    ?.find((b) => b.includes(`height: ${n.box.h}px`) && b.includes(`font-size: ${n.text.size}px`));
+  assert.ok(
+    !cls,
+    `"${n.text.content.slice(0, 20)}" still renders a ${n.box.h}px box around ${n.text.size}px text, which cannot hold one line`,
+  );
+}
+
 console.log(`ok — ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
   `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames, ` +
   `${authored.length} tokens named from variables, ${catalogue.variables.length} variables in ${catalogue.sets.length} sets`);

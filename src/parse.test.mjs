@@ -118,7 +118,7 @@ assert.ok(html5.includes('Noto+Sans+KR'), 'font actually used was never linked')
 // items it rendered as one line wide enough to be clipped at both ends.
 const empty = collectFrames(roots).find((f) => f.id === '2097:918');
 const emptyHTML = renderHTML(toIR(empty, message.blobs));
-const notice = emptyHTML.match(/<p class="([^"]*배정된[^"]*)">((?:.|\n)*?)<\/p>/);
+const notice = emptyHTML.match(/<p class="([^"]*배정된[^"]*)"[^>]*>((?:.|\n)*?)<\/p>/);
 assert.ok(notice, 'the two-line empty-state notice is no longer in the render');
 const noticeRules = emptyHTML.match(new RegExp(`\\.${notice[1]} \\{([^}]*)\\}`));
 assert.match(noticeRules[1], /display: flex/, 'this text is no longer a flex container — pick another case');
@@ -135,6 +135,17 @@ assert.equal(
   1,
   'a vertically centred text put its runs directly in the flex container, so each became its own item and the line breaks between them were dropped',
 );
+
+// A tool that has both the IR and the DOM needs to say which element is which, but
+// the baseline render should stay readable, so the ids are opt-in.
+const plain = renderHTML(lqIR);
+assert.ok(!plain.includes('data-id='), 'the baseline render is carrying node ids nobody asked for');
+const tagged = renderHTML(lqIR, { nodeIds: true });
+const tags = [...tagged.matchAll(/<(div|p|img|svg)\b/g)].map((m) => m[1]);
+const ids = [...tagged.matchAll(/data-id="([^"]+)"/g)].map((m) => m[1]);
+assert.equal(ids.length, tags.length, 'some element kinds render without their node id');
+assert.equal(new Set(ids).size, ids.length, 'two elements claim the same node id');
+assert.ok(ids.includes(lqIR.id), 'the frame itself is not tagged');
 
 // --- transforms ---
 // ARCHIVE carries rotated carets; identity nodes must stay untouched so that
