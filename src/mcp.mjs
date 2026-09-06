@@ -126,7 +126,14 @@ server.registerTool(
     inputSchema: { file },
   },
   wrap(({ file }) =>
-    framesOf(load(file)).map((f) => ({ id: f.id, page: f.page, name: f.name, w: Math.round(f.size.x), h: Math.round(f.size.y) }))),
+    framesOf(load(file)).map((f) => ({
+      id: f.id,
+      page: f.page,
+      name: f.name,
+      w: Math.round(f.size.x),
+      h: Math.round(f.size.y),
+      ...(f.visible === false ? { hidden: true } : {}),
+    }))),
 );
 
 server.registerTool(

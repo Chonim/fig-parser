@@ -84,6 +84,26 @@ for (const inst of rawInstances) {
   }
 }
 
+// --- a hidden frame is still a frame when you ask for it by name ---
+// toIR returned null for a hidden root and every caller dereferenced it, so any
+// tool handed one of these crashed.
+const hiddenFrames = [];
+(function walk(l) { for (const n of l) { if (n.type === 'FRAME' && n.visible === false) hiddenFrames.push(n); walk(n.children ?? []); } })(roots);
+assert.ok(hiddenFrames.length > 50, `expected hidden frames to test with, found ${hiddenFrames.length}`);
+for (const hf of hiddenFrames.slice(0, 20)) {
+  const ir = toIR(hf, message.blobs, { symbols, variables });
+  assert.ok(ir, `${hf.name}: hidden frame converted to null`);
+  assert.match(renderHTML(ir), /<html/, `${hf.name}: hidden frame did not render`);
+}
+// hidden children are still dropped from a visible parent
+const visibleParent = hiddenFrames.map((h) => roots.flat()).length && frames.find((f) => f.name === 'Tag-solid');
+const visibleIR = toIR(visibleParent, message.blobs, { symbols, variables });
+const idsIn = new Set();
+(function walk(n) { idsIn.add(n.id); n.children?.forEach(walk); })(visibleIR);
+const hiddenInside = [];
+(function walk(n) { if (n.visible === false) hiddenInside.push(n); n.children?.forEach(walk); })(visibleParent);
+assert.ok(hiddenInside.every((n) => !idsIn.has(n.id)), 'a hidden child survived into a visible parent');
+
 // --- auto-layout ---
 const auto = flatten(full).filter((n) => n.layout?.source === 'auto-layout');
 assert.ok(auto.length > 10, `expected auto-layout frames, found ${auto.length}`);

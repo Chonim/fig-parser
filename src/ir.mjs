@@ -805,7 +805,10 @@ export function toIR(node, blobs, options = {}) {
     base.bounds = { x: round(b.x), y: round(b.y), w: round(b.w), h: round(b.h) };
   }
 
-  if (node.visible === false) return null;
+  // A hidden node is dropped from its parent's output, but a hidden frame asked for
+  // by name is still what the caller asked for — returning null there crashed every
+  // tool that handles it.
+  if (node.visible === false && !isRoot) return null;
 
   if (node.textData) {
     const text = textStyle(node);
