@@ -95,6 +95,19 @@ assert.ok(spun.some((n) => /^rotate\(-?\d/.test(n.box.transform)), 'no plain rot
 assert.ok(flat.filter((n) => n.box.transform).length === 0, 'login frame should have no transforms at all');
 assert.ok(flat.every((n) => n.bounds === undefined), 'bounds leaked onto untransformed nodes');
 
+// --- repeated structure ---
+const withRepeat = [];
+(function walk(n) { if (n.layout?.repeat) withRepeat.push(n); n.children?.forEach(walk); })(lqIR);
+assert.ok(withRepeat.length >= 2, `expected repeated groups in LEARNING QUEST, found ${withRepeat.length}`);
+
+// Group 3095 is four identically sized cards stacked in a column
+const column = withRepeat.find((n) => n.name === 'Group 3095');
+assert.equal(column.layout.repeat.count, 4, 'card column repeat miscounted');
+assert.ok(column.children.some((c) => c.id === column.layout.repeat.like), 'repeat points at a node that is not a child');
+const sizes = new Set(column.children.map((c) => `${c.box.w}x${c.box.h}`));
+assert.equal(sizes.size, 1, 'repeat claimed for children of differing sizes');
+assert.ok(!flat.some((n) => n.layout?.repeat), 'login frame has no list, but one was inferred');
+
 // --- masks, blend modes, inner shadow ---
 const archiveFlat = [];
 (function walk(n) { archiveFlat.push(n); n.children?.forEach(walk); })(archiveIR);

@@ -345,6 +345,24 @@ const isBackdrop = (child, parent) =>
 
 const span = (a, b) => Math.max(0, Math.min(a[1], b[1]) - Math.max(a[0], b[0]));
 
+/** rough shape of a node: same role, same size, same immediate child roles */
+const signature = (n) =>
+  [n.role, Math.round(n.box.w), Math.round(n.box.h), (n.children ?? []).map((c) => c.role).sort().join('.')].join('|');
+
+/**
+ * Three or more siblings of the same shape are a list, and saying so is worth more
+ * to whoever writes the markup than any amount of per-card geometry.
+ */
+function repeatHint(kids) {
+  const groups = new Map();
+  for (const k of kids) {
+    const sig = signature(k);
+    (groups.get(sig) ?? groups.set(sig, []).get(sig)).push(k);
+  }
+  const best = [...groups.values()].sort((a, b) => b.length - a.length)[0];
+  return best?.length >= 3 ? { count: best.length, like: best[0].id } : undefined;
+}
+
 /**
  * Figma files drawn without auto-layout carry no stackMode, so infer one:
  * children that tile cleanly along an axis with a consistent gap become flex.
@@ -357,9 +375,11 @@ function inferLayout(node, kids) {
       gap: round(node.stackSpacing ?? 0),
       padding: { t: round(node.stackVerticalPadding ?? 0), r: round(node.stackHorizontalPadding ?? 0), b: round(node.stackVerticalPadding ?? 0), l: round(node.stackHorizontalPadding ?? 0) },
       source: 'auto-layout',
+      repeat: repeatHint(kids.filter((k) => k.role !== 'backdrop')),
     };
   }
   const flow = kids.filter((k) => k.role !== 'backdrop').map((k) => (k.bounds ? { ...k, box: k.bounds } : k));
+  const repeat = repeatHint(flow);
   if (flow.length < 2) return { mode: 'absolute' };
 
   for (const [dir, main, cross] of [['row', 'x', 'y'], ['column', 'y', 'x']]) {
@@ -388,9 +408,10 @@ function inferLayout(node, kids) {
       },
       align: Math.max(...ends) - Math.min(...starts) < 2 ? 'stretch' : 'flex-start',
       source: 'inferred',
+      repeat,
     };
   }
-  return { mode: 'absolute' };
+  return repeat ? { mode: 'absolute', repeat } : { mode: 'absolute' };
 }
 
 export function toIR(node, blobs, isRoot = true) {

@@ -144,18 +144,19 @@ Figma에서 마스크는 형제들을 **클리핑**한다 — 의미가 완전�
 
 ## Task 6 — 레이아웃 추론 실전 검증
 
-**이 파일에는 auto-layout이 하나도 없다.** 즉 `inferLayout()`의 flex 경로는 사실상 미검증이다.
-IR이 거의 전부 `absolute`로 나오는데, 이건 마크업 작업용으로는 가치가 낮다.
+**남은 것: auto-layout 샘플 확보.** `stackMode` 경로가 여전히 미검증이다 —
+이 파일에는 auto-layout 프레임이 하나도 없다. 샘플을 받으면 검증할 것.
 
-1. auto-layout을 실제로 쓴 `.fig`를 확보해 `stackMode` 경로를 검증
-2. 기하학 추론 경로를 강화: 현재 gap 편차 2px, 교차축 겹침만 본다.
-   - 래핑된 그리드(행이 여러 줄) 인식 → `flex-wrap` 또는 `grid`
-   - 반복 구조 감지: 같은 형태의 형제 3개 이상 → 리스트로 표시하고 IR에 `repeat: n` 힌트
-3. `horizontalConstraint`/`verticalConstraint`를 IR에 반영 —
-   `STRETCH`는 `width: 100%`, `MAX`는 `right` 고정 등 반응형 의도가 여기 들어있다
+완료된 것:
+- 반복 구조 감지 — 같은 형태(role·크기·자식 구성)의 형제 3개 이상이면
+  `layout.repeat = { count, like }`. 이 파일에서 31곳 검출, 테스트로 고정
+- 기하 추론은 회전된 자식의 `bounds`를 쓰도록 수정됨 (Task 1)
 
-**완료 기준:** auto-layout 샘플에서 flex 추론이 원본 프레임 구조와 일치.
-`repeat` 힌트가 붙은 카드 리스트가 실제로 반복 요소일 것.
+**의도적으로 보류:** `horizontalConstraint`/`verticalConstraint`.
+이 파일은 2617개 노드 전부 `SCALE`(Figma 기본값)이라 반응형 의도 신호가 없다.
+STRETCH/MIN/MAX가 실제로 쓰인 샘플이 생기면 그때 매핑할 것.
+
+래핑 그리드(`flex-wrap`/`grid`) 인식도 아직 없다.
 
 ---
 
