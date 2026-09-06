@@ -5,13 +5,15 @@ from — over MCP, with no Figma account, no API key, and no desktop app running
 
 ## Why
 
-A 1440×960 login screen is 4050 flat nodes. Handing that to a model is why "convert this design
-to code" tends to produce absolute-positioned soup. Parsing the file was never the hard part;
-turning it into something worth reading is.
+A `.fig` file arrives as one flat list — 4050 nodes in the smaller of the two files here, with
+no nesting left in it. Handing that to a model is why "convert this design to code" tends to
+produce absolute-positioned soup. Parsing the file was never the hard part; turning it into
+something worth reading is.
 
-fig-parser collapses that screen to **22 IR nodes**: a 200-node logo becomes one `<svg>`, the
-full-bleed art becomes a backdrop, repeated cards are labelled as a list, and colours come back
-under the names the design system gave them.
+The 1440×960 login screen in that file is 102 of those nodes. fig-parser gives it back as
+**22 IR nodes**: a 63-path logo becomes one `<svg>`, the full-bleed art becomes a backdrop,
+repeated cards are labelled as a list, and colours come back under the names the design system
+gave them.
 
 It also exists because the alternatives did not fit: the Figma MCP has plan limits, and the
 local editors I tried could not be customised or bent toward markup output.
@@ -54,7 +56,7 @@ them, so they are treated as untrusted.
 | Tool | What it gives you |
 | --- | --- |
 | `list_frames` | Every frame, including ones filed inside sections. Start here. |
-| `get_frame` | The IR for one frame, trimmed to a 30KB budget. `select` drills into a subtree. |
+| `get_frame` | The IR for one frame within a 30KB budget — style is dropped before content, and content before whole nodes. `select` drills into a subtree. |
 | `get_html` | The baseline render, for comparison. |
 | `export_assets` | Raster fills as `.png`, collapsed icon clusters as `.svg`. |
 | `get_tokens` | The colours and text styles one frame actually uses, named. |
@@ -109,12 +111,15 @@ is the source artboard, and dividing by it shrinks icons to a sub-pixel speck.
 
 ## Limits
 
-Radial gradients, stacked fills, Figma constraints and wrap-grid inference are unimplemented, and
-`layout.hug` does not relax the renderer's fixed sizes. Each is a deliberate stop rather than an
-oversight: none of the sample files exercises them, and untested rendering code is worse than an
-honest gap. `TASKS.md` records the evidence for each and what would unblock it.
+Radial gradients, stacked fills and wrap-grid inference are unimplemented, and `layout.hug` does
+not relax the renderer's fixed sizes. Each is a deliberate stop rather than an oversight: none of
+the sample files exercises them, and untested rendering code is worse than an honest gap.
+Constraints are reported in the IR but not turned into CSS, for the same reason.
 
-Run `pnpm census <file.fig>` against your own file to see what this drops on it.
+Run `pnpm census <file.fig>` against your own file to see what this drops on it. Rows marked
+`deliberate` are accounted for — duplicate vector-network blobs, invisible nodes, and variables
+that live in a library the file does not carry. Anything else is a real gap, and an
+"unaccounted for" row means nodes are going missing.
 
 ## Tests
 
