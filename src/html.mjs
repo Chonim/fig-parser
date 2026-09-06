@@ -118,16 +118,21 @@ function styleRules(node, parentLayout, assetUrl) {
     rules.push(['background-image', `url(${assetUrl(node.asset.hash)})`], ...backgroundFit(node.asset.scaleMode, node.asset.crop));
   }
   if (s.radius) rules.push(['border-radius', s.radius]);
-  if (s.border?.css) {
-    if (s.border.sides) {
-      // a single rule was rendering as a full box; `none` on the other three fixes it
-      const [t, r, b, l] = s.border.sides;
-      rules.push(['border-top', t], ['border-right', r], ['border-bottom', b], ['border-left', l]);
-    } else {
-      rules.push(['border', s.border.css]);
-    }
-    // Figma's INSIDE is CSS's own behaviour with border-box; OUTSIDE paints beyond
-    // the node, which content-box reproduces by growing the element by the weight
+  // A CSS `border` moves the containing block of every absolutely-positioned
+  // descendant in by its own width, whatever the box-sizing — Figma's stroke moves
+  // nothing. The bookshelf panel carries a 1px stroke, and its 21 book covers each
+  // landed a pixel down and right of Figma's own export. `outline` and an inset
+  // `box-shadow` paint the same ring without taking part in layout, and both follow
+  // border-radius. Uneven sides and gradient strokes still need a real border; both
+  // only occur on leaves here.
+  const shadows = [];
+  if (s.border?.css && !s.border.sides) {
+    if (s.border.align === 'OUTSIDE') rules.push(['outline', s.border.css]);
+    else shadows.push(`inset 0 0 0 ${s.border.width}px ${s.border.colour}`);
+  } else if (s.border?.css) {
+    // a single rule was rendering as a full box; `none` on the other three fixes it
+    const [t, r, b, l] = s.border.sides;
+    rules.push(['border-top', t], ['border-right', r], ['border-bottom', b], ['border-left', l]);
     rules.push(['box-sizing', s.border.align === 'OUTSIDE' ? 'content-box' : 'border-box']);
   }
   if (s.border?.image) {
@@ -135,7 +140,8 @@ function styleRules(node, parentLayout, assetUrl) {
     const layers = [s.fill && `${asImageLayer(s.fill)} padding-box`, `${s.border.image} border-box`].filter(Boolean);
     rules.push(['background', layers.join(', ')], ['border', `${s.border.width}px solid transparent`], ['box-sizing', 'border-box']);
   }
-  if (s.shadow) rules.push(['box-shadow', s.shadow]);
+  if (s.shadow) shadows.push(s.shadow);
+  if (shadows.length) rules.push(['box-shadow', shadows.join(', ')]);
   if (s.blend) rules.push(['mix-blend-mode', s.blend]);
   if (s.clip) rules.push(['overflow', 'hidden']);
   if (s.opacity != null && s.opacity < 1) rules.push(['opacity', String(s.opacity)]);

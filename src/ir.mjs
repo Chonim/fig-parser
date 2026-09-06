@@ -211,6 +211,8 @@ function border(node) {
     const colour = cssColor(paint.color, paint.opacity ?? 1);
     return {
       css: `${width}px solid ${colour}`,
+      width,
+      colour,
       ...(uneven ? { sides: sides.map((w) => (w ? `${w}px solid ${colour}` : 'none')) } : {}),
       ...(node.strokeAlign ? { align: node.strokeAlign } : {}),
     };

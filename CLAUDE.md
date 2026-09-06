@@ -134,7 +134,13 @@ These are pinned by tests. A red suite is usually one of these, not new code.
     geometry into the file. The ARCHIVE table's 11 row separators each carry a 1244x1
     `strokeGeometry`, and painting it ruled the table with lines Figma's own export does not
     have. The node stays in the IR without ink; dropping it left census 15 nodes short.
-14. **Figma calling a frame auto-layout does not make it a flex row.** Where the children it
+14. **A CSS `border` moves what is inside the node; a Figma stroke does not.** The border
+    shifts the containing block of every absolutely-positioned descendant in by its own
+    width, whatever the box-sizing. One 1px stroke on the bookshelf panel put all 21 book
+    covers a pixel down and right of Figma's export, and panels like it are on every screen —
+    this alone was 523,871 differing pixels to 213,864. `outline` and an inset `box-shadow`
+    paint the same ring without joining the layout, and both follow border-radius.
+15. **Figma calling a frame auto-layout does not make it a flex row.** Where the children it
     recomputed overlap on the main axis — a filling label with icons drawn over its ends — flex
     would push them apart. The stack settings stay reported; the placement falls back to the
     coordinates. 32 boxes in the design-system file.

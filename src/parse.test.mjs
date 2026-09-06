@@ -546,6 +546,17 @@ assert.match(myPageHTML, /object-view-box: inset\(0% 9\.4[0-9]% 0% 9\.4[0-9]%\)/
 assert.equal((myPageHTML.match(/object-view-box[^;]*inset\(0% 0% 0% 0%\)/g) ?? []).length, 0,
   'an identity paint transform is being written out as a crop');
 
+// --- a stroke does not move what is inside the node ---
+// A CSS `border` shifts the containing block of every absolutely-positioned descendant
+// in by its own width, whatever the box-sizing; Figma's stroke shifts nothing. The
+// bookshelf panel has a 1px stroke and its 21 book covers each landed a pixel down and
+// right of Figma's own export. Fixing it took the 12 frames from 523,871 differing
+// pixels to 213,864 — every frame improved, because the panels are everywhere.
+const shelf = renderHTML(toIR(collectFrames(roots).find((f) => f.id === '2102:20'), message.blobs));
+const bordered = shelf.match(/^\.[^\s{]+ \{[^}]*\n  border: [^}]*\}/gm) ?? [];
+assert.deepEqual(bordered, [], `${bordered.length} rules still lay a solid border into the layout`);
+assert.match(shelf, /outline: 1px solid|box-shadow: inset 0 0 0 1px/, 'the panel\'s 1px stroke is not painted at all now');
+
 const openDivs = (html.match(/<div/g) ?? []).length;
 assert.equal(openDivs, (html.match(/<\/div>/g) ?? []).length, 'unbalanced divs');
 
