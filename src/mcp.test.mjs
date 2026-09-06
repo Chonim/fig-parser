@@ -48,7 +48,7 @@ await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clien
 send({ jsonrpc: '2.0', method: 'notifications/initialized' });
 
 const tools = (await rpc('tools/list')).tools.map((t) => t.name);
-assert.deepEqual(tools.sort(), ['export_assets', 'get_frame', 'get_html', 'get_tokens', 'get_variables', 'list_frames']);
+assert.deepEqual(tools.sort(), ['export_assets', 'find_nodes', 'get_frame', 'get_html', 'get_tokens', 'get_variables', 'list_frames']);
 
 // this sample barely uses variables; the catalogue still has to come back well-formed
 const vars = json(await call('get_variables', { file: SAMPLE }));
@@ -208,6 +208,33 @@ for (const target of ['out/escape-probe/anything.fig', 'out/escape-probe']) {
 }
 const viaLinkWrite = await call('export_assets', { file: SAMPLE, frame: FRAME, outDir: 'out/escape-probe/pwn' });
 assert.equal(viaLinkWrite.isError, true, 'a symlink got out of FIG_ROOT for writing');
+
+// --- finding a node without walking the tree ---
+// Dogfooding this server, every question of the shape "where is the thing that says
+// X" was answered by paging through get_frame with select. The tool that answers it
+// directly returns the id to select, the path that gets there, and the box.
+const hits = json(await call('find_nodes', { file: SAMPLE, query: '로그인' }));
+assert.ok(hits.matches.length > 0, 'nothing matched a string the file definitely contains');
+const first = hits.matches[0];
+assert.match(first.id, /^\d+:\d+/, 'a match has no id to select');
+assert.ok(Array.isArray(first.path) && first.path.length > 0, 'a match has no ancestor path');
+assert.ok(first.frame, 'a match does not say which frame it is in');
+assert.equal(typeof first.box.x, 'number', 'a match has no box');
+assert.ok(hits.matches.some((m) => m.text?.includes('로그인')), 'no match carries the string it matched');
+
+// the id it hands back has to be the one get_frame(select:) takes
+const selected = json(await call('get_frame', { file: SAMPLE, frame: first.frame, select: first.id }));
+assert.equal(selected.id, first.id, 'the id from find_nodes does not select');
+
+// matching a name rather than a string in the design
+const byName = json(await call('find_nodes', { file: SAMPLE, query: 'Rectangle', field: 'name' }));
+assert.ok(byName.matches.length > 0, 'no node matched by name');
+assert.ok(byName.matches.every((m) => /rectangle/i.test(m.name)), 'a name search returned something else');
+
+// and it has to stay inside the budget like everything else
+const many = await call('find_nodes', { file: LIBRARY, query: 'a' });
+assert.ok(many.content[0].text.length <= BUDGET, `find_nodes returned ${many.content[0].text.length} B`);
+assert.ok(json(many).truncated === undefined || json(many).truncated > 0, 'a truncated result does not say so');
 
 proc.kill();
 

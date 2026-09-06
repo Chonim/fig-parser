@@ -57,6 +57,7 @@ them, so they are treated as untrusted.
 | --- | --- |
 | `list_frames` | Every frame, including ones filed inside sections. Start here. |
 | `get_frame` | The IR for one frame within a 30KB budget — style is dropped before content, and content before whole nodes. `select` drills into a subtree. |
+| `find_nodes` | Nodes whose text or name contains a string, with the id to `select`, the ancestors that lead to it, and its box. |
 | `get_html` | The baseline render, for comparison. |
 | `export_assets` | Raster fills as `.png`, collapsed icon clusters as `.svg`. |
 | `get_tokens` | The colours and text styles one frame actually uses, named. |

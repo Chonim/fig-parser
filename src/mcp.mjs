@@ -363,6 +363,59 @@ server.registerTool(
 );
 
 server.registerTool(
+  'find_nodes',
+  {
+    title: 'Find nodes',
+    description:
+      'Nodes whose text or name contains a string, across one frame or the whole file. '
+      + 'Returns the id to pass to get_frame(select:), the ancestors that lead to it, and its box — '
+      + 'so "where is the thing that says X" costs one call instead of paging through a frame.',
+    inputSchema: {
+      file,
+      query: z.string().describe('substring to look for, case-insensitive'),
+      frame: frame.optional().describe('one frame; omit to search the whole file'),
+      field: z.enum(['text', 'name', 'both']).optional().describe('what to match against (default both)'),
+      limit: z.number().int().positive().optional().describe('most matches to return (default 40)'),
+    },
+  },
+  wrap(({ file, query, frame: only, field = 'both', limit = 40 }) => {
+    const doc = load(file);
+    const needle = query.toLowerCase();
+    const frames = only
+      ? [framesOf(doc).find((f) => f.name === only || f.id === only)].filter(Boolean)
+      : framesOf(doc);
+    if (only && !frames.length) throw new Error(`frame not found: ${only}`);
+    const matches = [];
+    let found = 0;
+    for (const f of frames) {
+      const ir = toIR(f, doc.message.blobs, { symbols: doc.symbols, variables: doc.variables });
+      (function walk(node, path) {
+        const content = node.text?.content;
+        const hit = (field !== 'name' && content?.toLowerCase().includes(needle))
+          || (field !== 'text' && node.name?.toLowerCase().includes(needle));
+        if (hit) {
+          found += 1;
+          if (matches.length < limit) {
+            matches.push({
+              id: node.id,
+              name: node.name,
+              role: node.role,
+              frame: f.id,
+              // the ancestors, so a match can be read in context without another call
+              path,
+              box: { x: node.box.x, y: node.box.y, w: node.box.w, h: node.box.h },
+              ...(content ? { text: content.length > 120 ? `${content.slice(0, 120)}…` : content } : {}),
+            });
+          }
+        }
+        for (const child of node.children ?? []) walk(child, [...path, node.name || node.id]);
+      })(ir, []);
+    }
+    return { query, matches, ...(found > matches.length ? { truncated: found - matches.length } : {}) };
+  }),
+);
+
+server.registerTool(
   'get_html',
   {
     title: 'Get reference HTML',
