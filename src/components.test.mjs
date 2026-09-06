@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { parseFigFile, buildTree } from './parse.mjs';
+import { parseFigFile, buildTree, collectFrames } from './parse.mjs';
 import { toIR, symbolIndex, variableIndex, extractTokens, readVariables } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
@@ -22,16 +22,13 @@ const canvases = [];
   for (const n of list) (n.type === 'CANVAS' ? canvases.push(n) : collect(n.children ?? []));
 })(roots);
 
-// frames also live inside sections; missing those hid nearly half this file
-const frames = [];
-(function collectFrames(list) {
-  for (const n of list) {
-    if (n.type === 'FRAME') frames.push(n);
-    else if (n.type === 'SECTION') collectFrames(n.children ?? []);
-  }
-})(canvases.flatMap((c) => c.children));
+// Frames also live inside sections, and missing those hid nearly half this file.
+// The assertion has to run against the production collector — a copy of the
+// traversal written here would only ever agree with itself.
+const frames = collectFrames(roots);
 const topLevel = canvases.flatMap((c) => c.children.filter((n) => n.type === 'FRAME'));
-assert.ok(frames.length > topLevel.length, 'section traversal found nothing extra');
+assert.ok(frames.length > topLevel.length + 40, `section traversal found ${frames.length - topLevel.length} extra frames`);
+assert.ok(frames.every((f) => f.page), 'a frame came back without its page');
 
 const tag = frames.find((f) => f.name === 'Tag-solid');
 const bare = toIR(tag, message.blobs);

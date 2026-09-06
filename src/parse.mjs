@@ -70,6 +70,31 @@ export function buildTree(nodeChanges) {
 }
 
 /**
+ * Every frame in the document, with the page it belongs to. Frames are not only
+ * direct children of a CANVAS — a designer can file them inside SECTIONs, which
+ * nest — so anything that lists frames has to descend through those. This is the
+ * one copy; callers and tests must use it rather than walking the tree themselves.
+ */
+export function collectFrames(roots) {
+  const found = [];
+  (function walkCanvases(list) {
+    for (const n of list) {
+      if (n.type !== 'CANVAS') {
+        walkCanvases(n.children ?? []);
+        continue;
+      }
+      (function walkFrames(children) {
+        for (const c of children) {
+          if (c.type === 'FRAME') found.push({ ...c, page: n.name });
+          else if (c.type === 'SECTION') walkFrames(c.children ?? []);
+        }
+      })(n.children ?? []);
+    }
+  })(roots);
+  return found;
+}
+
+/**
  * fillGeometry/strokeGeometry commandsBlob: u8 command + float32 args, packed.
  * 0=close(0) 1=moveTo(2) 2=lineTo(2) 3=quadTo(4) 4=cubicTo(6)
  * (vectorNetworkBlob is a different, unrelated format — not decoded here.)

@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, relative, join, isAbsolute } from 'node:path';
-import { parseFigFile, buildTree } from './parse.mjs';
+import { parseFigFile, buildTree, collectFrames } from './parse.mjs';
 import { toIR, extractTokens, symbolIndex, variableIndex, readVariables } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
@@ -24,30 +24,18 @@ function load(file) {
   if (!cache.has(path)) {
     const doc = parseFigFile(path);
     const roots = buildTree(doc.message.nodeChanges);
-    const canvases = [];
-    (function collect(list) {
-      for (const n of list) {
-        if (n.type === 'CANVAS') canvases.push(n);
-        else collect(n.children ?? []);
-      }
-    })(roots);
-    cache.set(path, { ...doc, path, canvases, symbols: symbolIndex(roots), variables: variableIndex(doc.message.nodeChanges) });
+    cache.set(path, {
+      ...doc,
+      path,
+      frames: collectFrames(roots),
+      symbols: symbolIndex(roots),
+      variables: variableIndex(doc.message.nodeChanges),
+    });
   }
   return cache.get(path);
 }
 
-/** frames on a canvas, including those a designer filed away inside sections */
-const framesOf = (doc) =>
-  doc.canvases.flatMap((canvas) => {
-    const found = [];
-    (function collect(list) {
-      for (const n of list) {
-        if (n.type === 'FRAME') found.push({ ...n, page: canvas.name });
-        else if (n.type === 'SECTION') collect(n.children ?? []);
-      }
-    })(canvas.children);
-    return found;
-  });
+const framesOf = (doc) => doc.frames;
 
 function frameIR(file, frame) {
   const doc = load(file);

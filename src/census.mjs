@@ -6,7 +6,7 @@
  * in TASKS.md or is listed as deliberately ignored, and a row reaching 0 is what
  * "done" means for that task.
  */
-import { parseFigFile, buildTree, decodePathBlob } from './parse.mjs';
+import { parseFigFile, buildTree, decodePathBlob, collectFrames } from './parse.mjs';
 import { toIR, isIconCluster, HANDLED, symbolIndex, variableIndex } from './ir.mjs';
 
 const FILE = process.argv[2] ?? 'samples/kyowon-full.fig';
@@ -36,17 +36,7 @@ blobs.forEach((b, i) => {
 
 const roots = buildTree(nodeChanges);
 const symbols = symbolIndex(roots);
-const canvases = [];
-(function collect(list) {
-  for (const n of list) (n.type === 'CANVAS' ? canvases.push(n) : collect(n.children ?? []));
-})(roots);
-const frames = [];
-(function collectFrames(list) {
-  for (const n of list) {
-    if (n.type === 'FRAME') frames.push(n);
-    else if (n.type === 'SECTION') collectFrames(n.children ?? []);
-  }
-})(canvases.flatMap((c) => c.children));
+const frames = collectFrames(roots);
 
 let rawTotal = 0;
 let irTotal = 0;

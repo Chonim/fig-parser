@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseFigFile, buildTree } from './parse.mjs';
+import { parseFigFile, buildTree, collectFrames } from './parse.mjs';
 import { toIR, symbolIndex, variableIndex } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
@@ -13,13 +13,7 @@ if (!figPath) {
 
 const { message, readImage } = parseFigFile(figPath);
 const roots = buildTree(message.nodeChanges);
-const frames = [];
-(function collect(list) {
-  for (const n of list) {
-    if (n.type === 'FRAME') frames.push(n);
-    else collect(n.children ?? []); // frames also live inside SECTIONs
-  }
-})(roots);
+const frames = collectFrames(roots);
 
 if (!frameName) {
   for (const f of frames) console.log(`${f.id}\t${f.name}\t${Math.round(f.size.x)}x${Math.round(f.size.y)}`);
