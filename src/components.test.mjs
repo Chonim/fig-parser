@@ -50,6 +50,40 @@ const icon = components.find((c) => c.role === 'icon');
 assert.ok(icon?.asset.paths.length, 'expanded instance produced no drawable content');
 assert.ok(renderHTML(full).includes('<svg'), 'expanded instance never reached the HTML');
 
+// --- an instance keeps its own properties; the master only supplies content ---
+// The expansion used to take the master wholesale and put back five fields, so an
+// instance's own visibility, paints, radii, stack settings and stroke weights were
+// all replaced by the master's.
+const rawInstances = [];
+(function walk(l) { for (const n of l) { if (n.type === 'INSTANCE') rawInstances.push(n); walk(n.children ?? []); } })(roots);
+const hidden = rawInstances.filter((n) => n.visible === false);
+assert.ok(hidden.length > 50, `expected hidden instances to test with, found ${hidden.length}`);
+
+const survivors = new Set();
+for (const f of frames) {
+  const ir = toIR(f, message.blobs, { symbols, variables });
+  if (!ir) continue;
+  (function walk(n) { survivors.add(n.id); n.children?.forEach(walk); })(ir);
+}
+const rendered = hidden.filter((n) => survivors.has(n.id));
+assert.equal(rendered.length, 0, `${rendered.length} hidden instances rendered, e.g. ${rendered[0]?.name}`);
+
+// every own field an instance carries has to reach the expansion
+const CONTENT = new Set(['type', 'children', 'symbolData', 'derivedSymbolData', 'symbolLinks']);
+const tagIRFull = toIR(tag, message.blobs, { symbols, variables });
+const byId = new Map();
+(function walk(n) { byId.set(n.id, n); n.children?.forEach(walk); })(tagIRFull);
+let checked = 0;
+for (const inst of rawInstances) {
+  const out = byId.get(inst.id);
+  if (!out || out.role === 'icon') continue; // icon clusters collapse their properties away
+  checked++;
+  for (const k of ['visible', 'opacity', 'stackMode', 'stackChildPrimaryGrow']) {
+    if (inst[k] === undefined) continue;
+    assert.ok(out.__own === undefined || out.__own[k] === inst[k], `${inst.name}: ${k} lost in expansion`);
+  }
+}
+
 // --- auto-layout ---
 const auto = flatten(full).filter((n) => n.layout?.source === 'auto-layout');
 assert.ok(auto.length > 10, `expected auto-layout frames, found ${auto.length}`);

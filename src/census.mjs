@@ -71,7 +71,23 @@ for (const frame of frames) {
     const master = raw.type === 'INSTANCE' && raw.symbolData
       && symbols.get(`${raw.symbolData.symbolID.sessionID}:${raw.symbolData.symbolID.localID}`);
     if (master) rawTotal += subtreeSize(master) - 1;
-    const node = master ? { ...master, transform: raw.transform, size: raw.size, visible: raw.visible } : raw;
+    // ir.mjs applies symbolOverrides, and some of them hide nodes. Counting the
+    // master unpatched marks those visible here and dropped there.
+    const key = (g) => `${g.sessionID}:${g.localID}`;
+    const patch = (n, patches) => ({
+      ...n,
+      ...(patches.get(key(n.guid)) ?? {}),
+      children: (n.children ?? []).map((c) => patch(c, patches)),
+    });
+    const overrides = master && new Map(
+      (raw.symbolData.symbolOverrides ?? []).map((o) => {
+        const { guidPath, ...fields } = o;
+        return [key(guidPath.guids.at(-1)), fields];
+      }),
+    );
+    const node = master
+      ? { ...patch(master, overrides), ...raw, type: master.type, children: patch(master, overrides).children }
+      : raw;
 
     if (node.visible === false) {
       invisibleTotal += subtreeSize(node);

@@ -734,8 +734,15 @@ function expandInstance(node, symbols) {
     }),
   );
   const apply = (n) => ({ ...n, ...(patches.get(guidKey(n.guid)) ?? {}), children: (n.children ?? []).map(apply) });
-  // the instance decides where it sits; the master only supplies its contents
-  return { ...apply(master), guid: node.guid, id: node.id, name: node.name, transform: node.transform, size: node.size };
+
+  // The master supplies content; everything the instance states about itself wins.
+  // Listing the fields to carry over was the bug — an instance also carries its own
+  // visibility, paints, radii, stroke weights and stack settings, and all of those
+  // were being replaced by the master's. Name what comes from the master instead,
+  // which is a closed set, and let the rest fall through.
+  const FROM_MASTER = new Set(['type', 'children', 'symbolData', 'derivedSymbolData', 'symbolLinks']);
+  const own = Object.fromEntries(Object.entries(node).filter(([k, v]) => v !== undefined && !FROM_MASTER.has(k)));
+  return { ...apply(master), ...own, children: apply(master).children };
 }
 
 export function toIR(node, blobs, options = {}) {
