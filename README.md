@@ -87,6 +87,10 @@ the things that make markup writable:
   Twenty cards say so instead of arriving as twenty sets of coordinates.
 - `layout.rows` — which children share a visual row, as indices into that node's own
   `children`. Siblings arrive in paint order, which is not reading order.
+- `layout.overflow` — `{ axis, needs, has }` where the design forced an auto-layout box
+  narrower than its own contents. Figma neither shrinks the children nor clips them, so
+  they run past the edge and the next sibling paints over them. Better to know than to
+  copy a width the content breaks.
 - `label` — the text a painted box contains, when it contains exactly one: a button,
   a tab, a chip, without having to work out which sibling sits inside which.
 - `interactions` — what the designer wired up (`ON_CLICK`, `MOUSE_ENTER`, …) with the

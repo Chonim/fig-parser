@@ -602,6 +602,33 @@ function repeatHint(kids) {
 }
 
 /**
+ * What an auto-layout row or column needs on its main axis against what it was given.
+ * A designer can drag a fixed-size instance narrower than its contents; Figma neither
+ * shrinks the children nor clips them unless the frame says to, so they run past the
+ * edge and whatever paints later covers them. The GnbWrap header has a Button pushed
+ * from its master's 124px to 74. Reporting it beats reproducing it in silence: a model
+ * writing markup from this design would otherwise copy a width its own content breaks.
+ *
+ * A hugging container sizes itself to fit, so it cannot overrun.
+ */
+function overrun(node, kids) {
+  const horizontal = node.stackMode === 'HORIZONTAL';
+  if (node.stackPrimarySizing?.startsWith('RESIZE_TO_FIT')) return undefined;
+  const flow = kids.filter((k) => k.role !== 'backdrop' && !k.flexChild?.absolute);
+  if (flow.length === 0) return undefined;
+  const size = horizontal ? 'w' : 'h';
+  const pad = horizontal
+    ? round(node.stackHorizontalPadding ?? 0) + round(node.stackPaddingRight ?? node.stackHorizontalPadding ?? 0)
+    : round(node.stackVerticalPadding ?? 0) + round(node.stackPaddingBottom ?? node.stackVerticalPadding ?? 0);
+  const needs = round(
+    pad + flow.reduce((sum, k) => sum + k.box[size], 0) + round(node.stackSpacing ?? 0) * (flow.length - 1),
+  );
+  const has = round((horizontal ? node.size?.x : node.size?.y) ?? 0);
+  // sub-pixel slack is measurement noise, not a design that does not fit
+  return needs - has > 1 ? { axis: horizontal ? 'x' : 'y', needs, has } : undefined;
+}
+
+/**
  * Figma files drawn without auto-layout carry no stackMode, so infer one:
  * children that tile cleanly along an axis with a consistent gap become flex.
  */
@@ -627,6 +654,7 @@ function inferLayout(node, kids) {
       },
       source: 'auto-layout',
       repeat: repeatHint(kids.filter((k) => k.role !== 'backdrop')),
+      overflow: overrun(node, kids),
     };
   }
   const flow = kids.filter((k) => k.role !== 'backdrop').map((k) => (k.bounds ? { ...k, box: k.bounds } : k));

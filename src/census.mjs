@@ -15,6 +15,7 @@ const IGNORED = {
   'invisible nodes (visible: false)': 'deliberate — nothing to render',
   'vector-network-only blobs': 'deliberate — duplicate of fill/stroke geometry (see TASKS.md)',
   'variable binding into an external library — unresolvable': 'deliberate — the variable lives in a library this file does not contain',
+  'auto-layout box smaller than its own contents': 'the design, not this layer — reported on layout.overflow',
 };
 
 const maskFitsParent = new Set();
@@ -151,6 +152,8 @@ for (const frame of frames) {
   if (ir) {
     (function count(n) {
       irTotal++;
+      // not a gap in this layer: the design itself does not fit, and the IR says so
+      if (n.layout?.overflow) bump('auto-layout box smaller than its own contents');
       (n.children ?? []).forEach(count);
     })(ir);
   }

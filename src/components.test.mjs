@@ -419,6 +419,31 @@ assert.deepEqual(
   `${spilling.length} of ${icons} icons draw their paths in a bigger space than the viewBox they are given`,
 );
 
+// --- an auto-layout box the design forced smaller than its own contents ---
+// The GnbWrap header holds a Button instance squeezed from its master's 124px to 74:
+// its children hug and cannot shrink, so the label and arrow run past the edge and
+// the next sibling paints over them. Figma renders it the same way. The IR says so
+// rather than quietly reproducing it, because a model writing markup from a design
+// needs to know the design does not fit.
+const gnbIR = toIR(frames.find((f) => f.name === 'GnbWrap'), message.blobs, { symbols, variables });
+const tight = [];
+(function walk(n) {
+  if (n.layout?.overflow) tight.push(n);
+  n.children?.forEach(walk);
+})(gnbIR);
+const squeezed = tight.find((n) => n.box.w === 74);
+assert.ok(squeezed, `no over-constrained box reported on GnbWrap; found ${tight.length}`);
+assert.equal(squeezed.layout.overflow.axis, 'x');
+assert.equal(squeezed.layout.overflow.has, 74);
+assert.equal(squeezed.layout.overflow.needs, 124, 'the content needs its master\'s full width');
+// a box that fits says nothing
+const roomy = [];
+(function walk(n) {
+  if (n.layout?.source === 'auto-layout' && !n.layout.overflow) roomy.push(n);
+  n.children?.forEach(walk);
+})(gnbIR);
+assert.ok(roomy.length > tight.length, 'every auto-layout box is being called over-constrained');
+
 console.log(`ok — ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
   `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames, ` +
   `${authored.length} tokens named from variables, ${catalogue.variables.length} variables in ${catalogue.sets.length} sets`);
