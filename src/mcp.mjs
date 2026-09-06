@@ -314,7 +314,18 @@ const frame = z.string().describe('frame name or id from list_frames');
 
 const server = new McpServer({ name: 'fig-parser', version: '0.1.0' });
 
-server.registerTool(
+/**
+ * Every tool, defined once. The list used to exist three times — here, as an array
+ * typed out by hand in the test, and as a count in the README — so adding one meant
+ * remembering all three. Tests read this; the server registers from it.
+ */
+export const TOOLS = [];
+const tool = (name, meta, run) => {
+  TOOLS.push({ name, ...meta, run });
+  server.registerTool(name, meta, run);
+};
+
+tool(
   'list_frames',
   {
     title: 'List frames',
@@ -332,7 +343,7 @@ server.registerTool(
     }))),
 );
 
-server.registerTool(
+tool(
   'get_frame',
   {
     title: 'Get frame IR',
@@ -362,7 +373,7 @@ server.registerTool(
   }),
 );
 
-server.registerTool(
+tool(
   'find_nodes',
   {
     title: 'Find nodes',
@@ -415,7 +426,7 @@ server.registerTool(
   }),
 );
 
-server.registerTool(
+tool(
   'get_html',
   {
     title: 'Get reference HTML',
@@ -430,7 +441,7 @@ server.registerTool(
   }),
 );
 
-server.registerTool(
+tool(
   'export_assets',
   {
     title: 'Export frame images',
@@ -474,7 +485,7 @@ server.registerTool(
   }),
 );
 
-server.registerTool(
+tool(
   'get_variables',
   {
     title: 'Get design variables',
@@ -543,7 +554,7 @@ server.registerTool(
   }),
 );
 
-server.registerTool(
+tool(
   'get_tokens',
   {
     title: 'Get design tokens',

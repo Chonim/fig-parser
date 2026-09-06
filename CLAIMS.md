@@ -66,7 +66,7 @@ README:92–103 표와 `src/mcp.mjs`의 `describe()` 문자열. **모델이 읽�
 | C8 | `get_tokens.frame` — 생략하면 파일 전체 | 1-1 | 미검증 |
 | C9 | `get_variables` — `set`(부분일치) `frame`(그 프레임이 묶은 것만) | 1-1 | 미검증 |
 | C10 | `depth`/`includePaths`는 30KB 예산을 우회한다 | 1-1 | **버그로 판정** — 응답은 항상 예산 이하여야 한다 |
-| C11 | 도구는 7개다 | 1-2 | 미검증 |
+| C11 | 도구는 7개다 | 1-2 | 검증(mcp.test.mjs: TOOLS 길이) |
 
 ## D. 프레임/노드 id — 33개
 

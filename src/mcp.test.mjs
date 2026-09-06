@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, symlinkSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { measureReach } from './reach.mjs';
+import { TOOLS } from './mcp.mjs';
 
 const SAMPLE = 'samples/kyowon-full.fig';
 const FRAME = '온라인학습_Login';
@@ -47,8 +48,12 @@ const json = (res) => JSON.parse(res.content[0].text);
 await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'test', version: '1' } });
 send({ jsonrpc: '2.0', method: 'notifications/initialized' });
 
+// The list lived here as an array typed out by hand, so adding a tool meant editing
+// three places and the count in the README was a fourth. The definitions are the one
+// source; this reads them.
 const tools = (await rpc('tools/list')).tools.map((t) => t.name);
-assert.deepEqual(tools.sort(), ['export_assets', 'find_nodes', 'get_frame', 'get_html', 'get_tokens', 'get_variables', 'list_frames']);
+assert.deepEqual(tools.sort(), TOOLS.map((t) => t.name).sort(), 'the server exposes something other than the defined tools');
+assert.equal(TOOLS.length, 7, `${TOOLS.length} tools defined — the README says 7`);
 
 // this sample barely uses variables; the catalogue still has to come back well-formed
 const vars = json(await call('get_variables', { file: SAMPLE }));
