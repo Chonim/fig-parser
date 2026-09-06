@@ -142,23 +142,36 @@ function allot(root, budget, lean) {
   // Keeping a node means its siblings get emitted as stubs too, so that cost is
   // charged when the parent is taken. Counting only the kept nodes made the estimate
   // jump whenever a wide parent came in, and the search settled far below budget.
-  const stubCost = (n) => serialize(stub(n)).length;
+  // The response is indented, and every line of a node costs two spaces per level of
+  // depth on top of its own text. Costing nodes without that ran the estimate a third
+  // light on a deep frame, so the allowance had to be searched for and the search kept
+  // landing short. Charging the indentation makes the estimate track the real size.
+  const sizeAt = (obj, depth) => {
+    const text = serialize(obj);
+    return text.length + 2 * depth * (text.split('\n').length);
+  };
+  const stubCost = (n, depth) => sizeAt(stub(n), depth);
   const keep = new Set([root]);
-  let spent = serialize(lean ? leanNode(root) : root).length
-    + (root.children ?? []).reduce((a, c) => a + stubCost(c), 0);
-  const queue = [...(root.children ?? [])];
+  let spent = sizeAt(lean ? leanNode(root) : root, 0)
+    + (root.children ?? []).reduce((a, c) => a + stubCost(c, 1), 0);
+  const queue = (root.children ?? []).map((c) => [c, 1]);
   while (queue.length) {
-    const node = queue.shift();
+    const [node, depth] = queue.shift();
     const kids = node.children ?? [];
     // upgrading a stub to a listed node, plus stubs for everything beneath it
-    const cost = serialize(lean ? leanNode(node) : stub(node)).length - stubCost(node)
-      + kids.reduce((a, c) => a + stubCost(c), 0);
+    const cost = sizeAt(lean ? leanNode(node) : stub(node), depth) - stubCost(node, depth)
+      + kids.reduce((a, c) => a + stubCost(c, depth + 1), 0);
     if (spent + cost > budget) continue; // skip this one, a cheaper sibling may still fit
     keep.add(node);
     spent += cost;
-    queue.push(...kids);
+    queue.push(...kids.map((c) => [c, depth + 1]));
   }
 
+  return { tree: buildFrom(root, keep, lean), keep };
+}
+
+/** the response for a given set of kept nodes; everything else becomes a stub */
+function buildFrom(root, keep, lean) {
   const build = (node) => {
     const self = lean ? leanNode(node) : forModel(node, 1, false, false);
     const kids = node.children ?? [];
@@ -171,23 +184,97 @@ function allot(root, budget, lean) {
   return build(root);
 }
 
+/**
+ * Whatever budget the estimate left on the table, spent one node at a time against the
+ * real size. On a wide frame the next node the estimate would admit can cost 23KB, so
+ * there is nothing between 7377 B and over budget — but individual nodes deeper in
+ * still fit, and this finds them.
+ */
+function topUp(root, keep, lean, probes = 60) {
+  let out = buildFrom(root, keep, lean);
+  let size = serialize(out).length;
+  const queue = [];
+  (function collect(n) {
+    for (const c of n.children ?? []) {
+      if (keep.has(c)) collect(c);
+      else queue.push(c);
+    }
+  })(root);
+  // cheapest first, so the leftover buys as many nodes as it can
+  queue.sort((a, b) => serialize(stub(a)).length - serialize(stub(b)).length);
+  for (const node of queue.slice(0, probes)) {
+    keep.add(node);
+    const candidate = buildFrom(root, keep, lean);
+    const grown = serialize(candidate).length;
+    if (grown > BUDGET) { keep.delete(node); continue; }
+    out = candidate;
+    size = grown;
+  }
+  return out;
+}
+
 function fit(ir) {
   for (const lean of [false, true]) {
     const whole = forModel(ir, Infinity, false, lean);
     if (serialize(whole).length <= BUDGET) return whole;
   }
-  // allot costs each node on its own, while the response pays for indentation that
-  // grows with depth, so its estimate runs light. Search the allowance it is given
-  // until what actually comes out fits.
-  let lo = 0;
-  let hi = BUDGET;
-  let best = allot(ir, 0, true);
-  for (let i = 0; i < 12 && lo < hi; i++) {
+  // allot costs each node on its own while the response pays for indentation that
+  // grows with depth, so its estimate runs light and the allowance it is given has to
+  // be searched. That search used to bisect, which assumes a bigger allowance yields a
+  // bigger response — and it does not. Skipping a node keeps its whole subtree out of
+  // the queue, so a little more room can admit one wide child that crowds out many
+  // cheap ones: a component catalogue came back at 11725 B on a 30000 allowance and
+  // 13498 B on 12000. Bisection followed that curve downhill and settled far short.
+  //
+  // So walk the allowances and keep the response that describes the most of the frame,
+  // rather than the largest allowance that fits. Bytes are the wrong thing to maximise:
+  // one arrangement can be fatter and still name fewer nodes.
+  // Scored on what the frame actually says — its strings first, since a stub carries
+  // none and counting nodes alone rewards an arrangement of many stubs over one that
+  // names fewer nodes properly — then on how many nodes are described at all.
+  const score = (node) => {
+    const kids = Array.isArray(node.children) ? node.children : [];
+    return kids.reduce((a, c) => {
+      const s = score(c);
+      return [a[0] + s[0], a[1] + s[1]];
+    }, [node.text?.content ? 1 : 0, 1]);
+  };
+  // Size breaks a tie because the topping-up below grows whatever it is handed, and a
+  // fuller seed has more room to grow into: two candidates here both named 21 strings
+  // across 23 nodes, and the smaller one topped up to 7377 B while the larger reached
+  // 29724 of the same 30000 budget.
+  const better = (a, b) => a[0] > b[0]
+    || (a[0] === b[0] && (a[1] > b[1] || (a[1] === b[1] && a[2] > b[2])));
+  // The allowance is not the response size — allot charges stubs for children it may
+  // never list — so the search runs past the budget rather than stopping at it.
+  const CEILING = BUDGET * 2;
+  const STEPS = 48;
+  const first = allot(ir, 0, true);
+  let best = first.tree;
+  let bestKeep = first.keep;
+  let bestScore = [...score(best), serialize(best).length];
+  let bestAt = 0;
+  const probe = (allowance) => {
+    const { tree, keep } = allot(ir, Math.round(allowance), true);
+    if (serialize(tree).length > BUDGET) return;
+    const s = [...score(tree), serialize(tree).length];
+    if (better(s, bestScore)) { best = tree; bestScore = s; bestAt = allowance; bestKeep = keep; }
+  };
+  for (let i = 1; i <= STEPS; i++) probe((CEILING * i) / STEPS);
+  // and the points a bisection would have visited, so this can never come out worse
+  // than the search it replaces
+  for (let lo = 0, hi = CEILING, i = 0; i < 12 && lo < hi; i++) {
     const mid = Math.floor((lo + hi + 1) / 2);
-    const candidate = allot(ir, mid, true);
-    if (serialize(candidate).length <= BUDGET) { best = candidate; lo = mid; } else { hi = mid - 1; }
+    if (serialize(allot(ir, mid, true).tree).length <= BUDGET) { probe(mid); lo = mid; } else hi = mid - 1;
   }
-  return best;
+  // the coarse pass lands in the right neighbourhood; the response only changes where
+  // one more node is admitted, so close in on that step rather than sampling the
+  // whole range finely
+  for (let span = CEILING / STEPS; span >= 4; span /= 2) {
+    probe(bestAt + span / 2);
+    probe(bestAt - span / 2);
+  }
+  return topUp(ir, bestKeep, true);
 }
 
 /** the node named by an id or a name, searched depth-first from the frame root */
@@ -418,4 +505,7 @@ server.registerTool(
   }),
 );
 
-await server.connect(new StdioServerTransport());
+// importing this file gives a tool a way to measure the budget without a server
+if (import.meta.url === `file://${process.argv[1]}`) await server.connect(new StdioServerTransport());
+
+export { allot, buildFrom, topUp, fit, forModel, BUDGET };

@@ -216,7 +216,7 @@ proc.kill();
 // of one comes back. Pinning it here is what makes a change to the allocator show up
 // as a failure rather than as quietly less of the design arriving.
 const reach = await measureReach(SAMPLE);
-assert.ok(reach.text >= 86, `text reached fell to ${reach.text}/${reach.textTotal}, was 86`);
+assert.ok(reach.text >= 87, `text reached fell to ${reach.text}/${reach.textTotal}, was 87`);
 assert.ok(reach.nodes >= 794, `nodes reached fell to ${reach.nodes}/${reach.nodeTotal}, was 794`);
 assert.ok(reach.truncated <= 7, `${reach.truncated} frames truncated, was 7`);
 

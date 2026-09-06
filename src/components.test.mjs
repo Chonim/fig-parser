@@ -453,12 +453,9 @@ assert.ok(roomy.length > tight.length, 'every auto-layout box is being called ov
 // go down.
 const reach = await measureReach(SAMPLE);
 assert.deepEqual(reach.over, [], 'a response came back over the budget it is supposed to fit');
-assert.ok(reach.slack <= 3, `${reach.slack} frames cut with half the budget unspent, was 3`);
-// 871/2559 before Figma's recomputed sizes were applied: the corrected numbers are
-// slightly longer to write down, 416 bytes across 97 frames, which pushed two nodes
-// of one frame past the budget. They are still reachable with `select`.
-assert.ok(reach.text >= 869, `text reached fell to ${reach.text}/${reach.textTotal}, was 869`);
-assert.ok(reach.nodes >= 2557, `nodes reached fell to ${reach.nodes}/${reach.nodeTotal}, was 2557`);
+assert.equal(reach.slack, 0, `${reach.slack} frames cut with half the budget unspent`);
+assert.ok(reach.text >= 906, `text reached fell to ${reach.text}/${reach.textTotal}, was 906`);
+assert.ok(reach.nodes >= 2708, `nodes reached fell to ${reach.nodes}/${reach.nodeTotal}, was 2708`);
 assert.ok(reach.truncated <= 20, `${reach.truncated} frames truncated, was 20`);
 
 // --- derivedSymbolData: what a guidPath addresses ---
