@@ -770,7 +770,15 @@ function expandInstance(node, symbols) {
       return [guidKey(guidPath.guids.at(-1)), fields];
     }),
   );
-  const apply = (n) => ({ ...n, ...(patches.get(guidKey(n.guid)) ?? {}), children: (n.children ?? []).map(apply) });
+  // Copies of a master carry the master's ids, so three instances of one component
+  // put three nodes with the same id in a frame and `select` could only answer with
+  // the first. Namespacing the copy by the instance keeps them addressable.
+  const apply = (n) => ({
+    ...n,
+    ...(patches.get(guidKey(n.guid)) ?? {}),
+    id: `${node.id}/${n.id}`,
+    children: (n.children ?? []).map(apply),
+  });
 
   // The master supplies content; everything the instance states about itself wins.
   // Listing the fields to carry over was the bug — an instance also carries its own

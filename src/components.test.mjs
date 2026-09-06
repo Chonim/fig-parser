@@ -140,6 +140,22 @@ const throughWrapper = repeats.find((n) =>
 assert.ok(throughWrapper, 'no repeat was found across a wrapped sibling');
 assert.ok(throughWrapper.layout.repeat.count >= 3, 'repeat below its own threshold');
 
+// --- ids stay unique once instances are expanded ---
+// A copy of a master keeps the master's node ids, so three instances of the same
+// component put three nodes with id 289:287 in one frame and selectNode silently
+// answered with whichever came first.
+let framesWithDuplicates = 0;
+let duplicateIds = 0;
+for (const f of frames) {
+  const ir = toIR(f, message.blobs, { symbols, variables });
+  if (!ir) continue;
+  const counts = new Map();
+  (function walk(n) { counts.set(n.id, (counts.get(n.id) ?? 0) + 1); n.children?.forEach(walk); })(ir);
+  const repeats = [...counts.values()].filter((v) => v > 1).length;
+  if (repeats) { framesWithDuplicates++; duplicateIds += repeats; }
+}
+assert.equal(duplicateIds, 0, `${duplicateIds} ids are ambiguous across ${framesWithDuplicates} frames`);
+
 // --- tokens have to reach inside an expanded instance ---
 // The recursive call rebuilt its options object and left `variables` out, so every
 // node under a component came back with invented colour names instead of the
