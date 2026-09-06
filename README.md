@@ -24,7 +24,23 @@ local editors I tried could not be customised or bent toward markup output.
 pnpm install
 ```
 
-Node 20+. No build step — plain ESM, four runtime dependencies.
+Node 20+. No build step — plain ESM, four runtime dependencies (`pixelmatch` and `pngjs` are
+dev-only, for the pixel diff).
+
+## Commands
+
+```bash
+pnpm mcp                      # the MCP server on stdio — what an agent connects to
+pnpm test                     # parse + components + mcp suites, in that order
+pnpm census [file.fig]        # what the IR layer drops or approximates on a file
+pnpm reach  [file.fig]        # how much of each frame one get_frame call delivers
+pnpm diff   [file.fig]        # pixel comparison against refs/ — see REFS.md
+pnpm dogfood                  # the tool-call count find_nodes saves, re-measured
+```
+
+Everything but `pnpm mcp` skips rather than fails when the sample files are missing, and `CI=1`
+turns that skip into an exit 1 — a skip and a pass look identical to anything reading an exit
+code.
 
 ## Use it from the CLI
 
@@ -71,6 +87,40 @@ and takes one of searching (`pnpm dogfood` re-runs that comparison).
 `pnpm reach` says how much of each frame a single call delivers, so a change to the budget
 shows up as a number rather than as quietly less of the design arriving.
 
+### What each tool takes
+
+Every tool takes `file`, a path under `FIG_ROOT`. Beyond that:
+
+| Tool | Parameters |
+| --- | --- |
+| `list_frames` | — |
+| `get_frame` | `frame`, `select` (id or name to return instead of the whole frame), `depth` (levels to describe; 1 = this node with its children as stubs), `includePaths` (inline raw path data; large) |
+| `find_nodes` | `query` (substring, case-insensitive), `frame` (omit to search the file), `field` (`text` \| `name` \| `both`), `limit` (default 40) |
+| `get_html` | `frame`, `assetDir` (href prefix for images, default `assets`) |
+| `export_assets` | `frame`, `outDir` (under `FIG_ROOT`) — returns `{ hash: { file, usedBy } }` so a written file can be traced back to the nodes that wanted it |
+| `get_tokens` | `frame` (omit for the whole file) |
+| `get_variables` | `set` (substring), `frame` (only what that frame binds) |
+
+`depth` and `includePaths` bypass the 30KB budget; everything else respects it.
+
+### A worked pass over one screen
+
+```
+list_frames(file)                                  → 2063:280  온라인학습_Login  1440×960
+get_frame(file, "2063:280")                        → 22 nodes, the whole screen in one call
+get_tokens(file, "2063:280")                       → the colours and text styles it uses, named
+export_assets(file, "2063:280", "out/login")       → the logo as .svg, the art as .png
+```
+
+A frame too big for one call comes back with stubs. Two ways forward:
+
+```
+find_nodes(file, "Products", frame: "97:3081")     → id + ancestors + box, one call
+get_frame(file, "97:3081", select: "<that id>")    → that subtree in full
+```
+
+`docs/gnb-from-ir.html` is a header written this way, from nothing but those responses.
+
 ## What the IR looks like
 
 ```jsonc
@@ -94,9 +144,9 @@ the things that make markup writable:
 - `layout.rows` — which children share a visual row, as indices into that node's own
   `children`. Siblings arrive in paint order, which is not reading order.
 - `layout.overflow` — `{ axis, needs, has }` where the design forced an auto-layout box
-  narrower than its own contents (28 of the design-system file's 1337). Figma neither shrinks the children nor clips them, so
-  they run past the edge and the next sibling paints over them. Better to know than to
-  copy a width the content breaks.
+  narrower than its own contents (28 of the design-system file's 1337). Figma neither shrinks
+  the children nor clips them, so they run past the edge and the next sibling paints over them.
+  Better to know than to copy a width the content breaks.
 - `label` — the text a painted box contains, when it contains exactly one: a button,
   a tab, a chip, without having to work out which sibling sits inside which.
 - `interactions` — what the designer wired up (`ON_CLICK`, `MOUSE_ENTER`, …) with the
@@ -127,6 +177,10 @@ centred stroke alignment are reported in the IR but not turned into CSS — both
 screen, and there is no reference image here to say whether the result would be right.
 `layout.hug` no longer pins a box to its measured size; that measurement is a floor now, so a
 longer string grows the box rather than spilling out of it.
+
+Nothing here has been compared against Figma's own output. `pnpm diff` does that comparison and
+`REFS.md` says which frames to export and how; until those images exist, every check in this
+repo agrees with the render it is looking at.
 
 Run `pnpm census <file.fig>` against your own file to see what this drops on it. Rows marked
 `deliberate` are accounted for — duplicate vector-network blobs, invisible nodes, and variables

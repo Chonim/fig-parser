@@ -348,7 +348,7 @@ server.registerTool(
       file,
       frame,
       select: z.string().optional().describe('id or name of a node to return instead of the whole frame'),
-      depth: z.number().int().min(1).optional().describe('max nesting depth, 1 = this node only (default: as deep as fits)'),
+      depth: z.number().int().min(1).optional().describe('levels of nesting to describe; 1 = this node with its children listed as stubs (default: as deep as the budget allows)'),
       includePaths: z.boolean().optional().describe('inline raw SVG path data (large; usually you want export_assets instead)'),
     },
   },
