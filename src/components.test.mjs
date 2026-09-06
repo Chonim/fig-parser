@@ -472,6 +472,8 @@ assert.ok(reach.truncated <= 20, `${reach.truncated} frames truncated, was 20`);
 // crosses an instance boundary: [a, b] means a is a nested instance inside this master
 // and b is a node inside a's own master.
 const derivedKey = (g) => `${g.sessionID}:${g.localID}`;
+const rawById = new Map();
+(function index(ns) { for (const n of ns) { rawById.set(derivedKey(n.guid), n); index(n.children ?? []); } })(roots);
 let derivedEntries = 0, byLastCollisions = 0, byPathCollisions = 0;
 const pathLengths = new Set();
 for (const node of message.nodeChanges) {
@@ -489,6 +491,26 @@ for (const node of message.nodeChanges) {
   for (const v of byPath.values()) if (v > 1) byPathCollisions += v - 1;
 }
 assert.equal(derivedEntries, 2336, `derived entries moved to ${derivedEntries}`);
+
+// derivedTextData is Figma's laid-out glyph run. Nothing in it moves a box here: every
+// one of the 158 entries that also carries a size has layoutSize equal to that size,
+// the 25 without one match the master node's own size, and not a single entry is
+// truncated. Reading it would change no number, so it stays unread — and this says so
+// rather than leaving the next reader to work it out again.
+let textEntries = 0, redundant = 0, figmaTruncated = 0;
+for (const node of message.nodeChanges) {
+  for (const e of node.derivedSymbolData ?? []) {
+    const t = e.derivedTextData;
+    if (!t) continue;
+    textEntries += 1;
+    if (t.truncationStartIndex >= 0) figmaTruncated += 1;
+    const own = e.size ?? rawById.get(derivedKey(e.guidPath.guids.at(-1)))?.size;
+    if (own && Math.abs(own.x - t.layoutSize.x) < 0.5 && Math.abs(own.y - t.layoutSize.y) < 0.5) redundant += 1;
+  }
+}
+assert.equal(textEntries, 183, `derivedTextData entries moved to ${textEntries}`);
+assert.equal(redundant, textEntries, `${textEntries - redundant} laid-out text boxes differ from the size already applied`);
+assert.equal(figmaTruncated, 0, `${figmaTruncated} texts are truncated by Figma and this layer does not say so`);
 assert.deepEqual([...pathLengths].sort(), [1, 2, 3], 'paths are no longer 1 to 3 guids long');
 assert.equal(byPathCollisions, 0, 'the full guid path is no longer a unique key inside an instance');
 assert.ok(byLastCollisions > 0, 'the last guid no longer collides — the cheap key may now be safe, re-check before using it');
