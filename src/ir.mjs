@@ -23,7 +23,7 @@ const VECTOR_TYPES = new Set(['VECTOR', 'BOOLEAN_OPERATION', 'LINE', 'STAR', 'RE
  * `approximated` means it renders, but not faithfully yet.
  */
 export const HANDLED = {
-  nodeTypes: new Set([...VECTOR_TYPES, 'DOCUMENT', 'CANVAS', 'FRAME', 'GROUP', 'TEXT', 'RECTANGLE', 'ROUNDED_RECTANGLE', 'ELLIPSE']),
+  nodeTypes: new Set([...VECTOR_TYPES, 'DOCUMENT', 'CANVAS', 'SECTION', 'FRAME', 'GROUP', 'TEXT', 'RECTANGLE', 'ROUNDED_RECTANGLE', 'ELLIPSE', 'SYMBOL', 'INSTANCE']),
   fillPaints: { handled: new Set(['SOLID', 'GRADIENT_LINEAR', 'IMAGE']), approximated: new Set(['GRADIENT_RADIAL', 'GRADIENT_ANGULAR', 'GRADIENT_DIAMOND']) },
   strokePaints: { handled: new Set(['SOLID', 'GRADIENT_LINEAR']), approximated: new Set(['GRADIENT_RADIAL', 'GRADIENT_ANGULAR', 'GRADIENT_DIAMOND']) },
   effects: { handled: new Set(['DROP_SHADOW', 'INNER_SHADOW']), approximated: new Set() },
@@ -345,6 +345,18 @@ const isBackdrop = (child, parent) =>
 
 const span = (a, b) => Math.max(0, Math.min(a[1], b[1]) - Math.max(a[0], b[0]));
 
+const PRIMARY_ALIGN = { MIN: undefined, CENTER: 'center', MAX: 'flex-end', SPACE_BETWEEN: 'space-between', SPACE_EVENLY: 'space-evenly' };
+const COUNTER_ALIGN = { MIN: undefined, CENTER: 'center', MAX: 'flex-end', BASELINE: 'baseline' };
+
+/** what a node asks of the auto-layout parent it sits in */
+function flexChild(node) {
+  const child = {};
+  if (node.stackPositioning === 'ABSOLUTE') child.absolute = true;
+  if (node.stackChildAlignSelf) child.alignSelf = COUNTER_ALIGN[node.stackChildAlignSelf] ?? node.stackChildAlignSelf.toLowerCase();
+  if (node.stackChildPrimaryGrow) child.grow = node.stackChildPrimaryGrow;
+  return Object.keys(child).length ? child : undefined;
+}
+
 /** rough shape of a node: same role, same size, same immediate child roles */
 const signature = (n) =>
   [n.role, Math.round(n.box.w), Math.round(n.box.h), (n.children ?? []).map((c) => c.role).sort().join('.')].join('|');
@@ -383,7 +395,20 @@ function inferLayout(node, kids) {
       mode: 'flex',
       direction: node.stackMode === 'HORIZONTAL' ? 'row' : 'column',
       gap: round(node.stackSpacing ?? 0),
-      padding: { t: round(node.stackVerticalPadding ?? 0), r: round(node.stackHorizontalPadding ?? 0), b: round(node.stackVerticalPadding ?? 0), l: round(node.stackHorizontalPadding ?? 0) },
+      // horizontal/vertical padding are the left and top edges; right and bottom
+      // have fields of their own and are not always the same value
+      padding: {
+        t: round(node.stackVerticalPadding ?? 0),
+        r: round(node.stackPaddingRight ?? node.stackHorizontalPadding ?? 0),
+        b: round(node.stackPaddingBottom ?? node.stackVerticalPadding ?? 0),
+        l: round(node.stackHorizontalPadding ?? 0),
+      },
+      justify: PRIMARY_ALIGN[node.stackPrimaryAlignItems],
+      align: COUNTER_ALIGN[node.stackCounterAlignItems],
+      hug: {
+        main: node.stackPrimarySizing?.startsWith('RESIZE_TO_FIT') || undefined,
+        cross: node.stackCounterSizing?.startsWith('RESIZE_TO_FIT') || undefined,
+      },
       source: 'auto-layout',
       repeat: repeatHint(kids.filter((k) => k.role !== 'backdrop')),
     };
@@ -424,13 +449,58 @@ function inferLayout(node, kids) {
   return repeat ? { mode: 'absolute', repeat } : { mode: 'absolute' };
 }
 
-export function toIR(node, blobs, isRoot = true) {
+const guidKey = (g) => `${g.sessionID}:${g.localID}`;
+
+/**
+ * Every SYMBOL master in the document, so INSTANCE nodes can be expanded.
+ * Takes the built tree, not raw nodeChanges — a master is only useful with its
+ * children attached, and buildTree is what attaches them.
+ */
+export function symbolIndex(roots) {
+  const index = new Map();
+  (function walk(list) {
+    for (const n of list) {
+      if (n.type === 'SYMBOL') index.set(guidKey(n.guid), n);
+      walk(n.children ?? []);
+    }
+  })(roots);
+  return index;
+}
+
+/**
+ * An INSTANCE carries no children of its own — just a symbolID and a list of
+ * overrides addressing nodes inside the master by guid path. Expanding it means
+ * walking the master's subtree and patching the addressed nodes on the way past.
+ */
+function expandInstance(node, symbols) {
+  const master = symbols?.get(guidKey(node.symbolData.symbolID));
+  if (!master) return undefined;
+  const patches = new Map(
+    (node.symbolData.symbolOverrides ?? []).map((o) => {
+      const { guidPath, ...fields } = o;
+      return [guidKey(guidPath.guids.at(-1)), fields];
+    }),
+  );
+  const apply = (n) => ({ ...n, ...(patches.get(guidKey(n.guid)) ?? {}), children: (n.children ?? []).map(apply) });
+  // the instance decides where it sits; the master only supplies its contents
+  return { ...apply(master), guid: node.guid, id: node.id, name: node.name, transform: node.transform, size: node.size };
+}
+
+export function toIR(node, blobs, options = {}) {
+  const { isRoot = true, symbols } = typeof options === 'boolean' ? { isRoot: options } : options;
+  if (node.type === 'INSTANCE' && node.symbolData) {
+    const expanded = expandInstance(node, symbols);
+    if (expanded) return toIR(expanded, blobs, { isRoot, symbols, instanceOf: node.symbolData.symbolID });
+  }
   // the rendered root is placed at the origin; kiwi may also omit matrix cells,
   // so fill in identity defaults rather than trusting the struct to be complete
   const t = { ...IDENTITY, ...node.transform, ...(isRoot ? { m02: 0, m12: 0 } : {}) };
   const box = { x: round(t.m02), y: round(t.m12), w: round(node.size?.x ?? 0), h: round(node.size?.y ?? 0) };
   const transform = transformCss(t);
   const base = { id: node.id, name: node.name, box };
+  if (options.instanceOf) base.component = { name: node.name, instanceOf: guidKey(options.instanceOf) };
+  const inParent = flexChild(node);
+  if (inParent) base.flexChild = inParent;
   if (transform) {
     // width/height stay in the element's own frame; `bounds` is the footprint it
     // actually occupies once rotated, which is what layout reasoning needs
@@ -471,7 +541,7 @@ export function toIR(node, blobs, isRoot = true) {
     opacity: node.opacity ?? 1,
   };
 
-  const kids = (node.children ?? []).filter((c) => c !== mask).map((c) => toIR(c, blobs, false)).filter(Boolean);
+  const kids = (node.children ?? []).filter((c) => c !== mask).map((c) => toIR(c, blobs, { isRoot: false, symbols })).filter(Boolean);
   if (isRoot) for (const k of kids) if (isBackdrop(k, node)) k.role = 'backdrop';
 
   if (image && !kids.length) {

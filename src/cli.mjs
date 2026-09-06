@@ -2,7 +2,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseFigFile, buildTree } from './parse.mjs';
-import { toIR } from './ir.mjs';
+import { toIR, symbolIndex } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
 const [figPath, frameName, outDir = 'out'] = process.argv.slice(2);
@@ -16,8 +16,8 @@ const roots = buildTree(message.nodeChanges);
 const frames = [];
 (function collect(list) {
   for (const n of list) {
-    if (n.type === 'CANVAS') frames.push(...n.children.filter((c) => c.type === 'FRAME'));
-    else collect(n.children);
+    if (n.type === 'FRAME') frames.push(n);
+    else collect(n.children ?? []); // frames also live inside SECTIONs
   }
 })(roots);
 
@@ -29,7 +29,7 @@ if (!frameName) {
 const frame = frames.find((f) => f.name === frameName || f.id === frameName);
 if (!frame) throw new Error(`frame not found: ${frameName}\navailable: ${frames.map((f) => f.name).join(', ')}`);
 
-const ir = toIR(frame, message.blobs);
+const ir = toIR(frame, message.blobs, { symbols: symbolIndex(roots) });
 mkdirSync(join(outDir, 'assets'), { recursive: true });
 
 const written = new Set();

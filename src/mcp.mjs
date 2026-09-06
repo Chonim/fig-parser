@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, relative, join, isAbsolute } from 'node:path';
 import { parseFigFile, buildTree } from './parse.mjs';
-import { toIR, extractTokens } from './ir.mjs';
+import { toIR, extractTokens, symbolIndex } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
 const ROOT = resolve(process.env.FIG_ROOT ?? process.cwd());
@@ -23,26 +23,37 @@ function load(file) {
   const path = safePath(file);
   if (!cache.has(path)) {
     const doc = parseFigFile(path);
+    const roots = buildTree(doc.message.nodeChanges);
     const canvases = [];
     (function collect(list) {
       for (const n of list) {
         if (n.type === 'CANVAS') canvases.push(n);
         else collect(n.children ?? []);
       }
-    })(buildTree(doc.message.nodeChanges));
-    cache.set(path, { ...doc, path, canvases });
+    })(roots);
+    cache.set(path, { ...doc, path, canvases, symbols: symbolIndex(roots) });
   }
   return cache.get(path);
 }
 
+/** frames on a canvas, including those a designer filed away inside sections */
 const framesOf = (doc) =>
-  doc.canvases.flatMap((c) => c.children.filter((n) => n.type === 'FRAME').map((f) => ({ ...f, page: c.name })));
+  doc.canvases.flatMap((canvas) => {
+    const found = [];
+    (function collect(list) {
+      for (const n of list) {
+        if (n.type === 'FRAME') found.push({ ...n, page: canvas.name });
+        else if (n.type === 'SECTION') collect(n.children ?? []);
+      }
+    })(canvas.children);
+    return found;
+  });
 
 function frameIR(file, frame) {
   const doc = load(file);
   const found = framesOf(doc).find((f) => f.name === frame || f.id === frame);
   if (!found) throw new Error(`frame not found: ${frame}\navailable: ${framesOf(doc).map((f) => f.name).join(', ')}`);
-  return { doc, node: found, ir: toIR(found, doc.message.blobs) };
+  return { doc, node: found, ir: toIR(found, doc.message.blobs, { symbols: doc.symbols }) };
 }
 
 /**
@@ -214,7 +225,7 @@ server.registerTool(
   wrap(({ file, frame }) => {
     if (frame) return extractTokens(frameIR(file, frame).ir);
     const doc = load(file);
-    const merged = { role: 'frame', children: framesOf(doc).map((f) => toIR(f, doc.message.blobs)) };
+    const merged = { role: 'frame', children: framesOf(doc).map((f) => toIR(f, doc.message.blobs, { symbols: doc.symbols })) };
     return extractTokens(merged);
   }),
 );

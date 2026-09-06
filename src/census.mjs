@@ -7,7 +7,7 @@
  * "done" means for that task.
  */
 import { parseFigFile, buildTree, decodePathBlob } from './parse.mjs';
-import { toIR, isIconCluster, HANDLED } from './ir.mjs';
+import { toIR, isIconCluster, HANDLED, symbolIndex } from './ir.mjs';
 
 const FILE = process.argv[2] ?? 'samples/kyowon-full.fig';
 
@@ -35,11 +35,18 @@ blobs.forEach((b, i) => {
 });
 
 const roots = buildTree(nodeChanges);
+const symbols = symbolIndex(roots);
 const canvases = [];
 (function collect(list) {
   for (const n of list) (n.type === 'CANVAS' ? canvases.push(n) : collect(n.children ?? []));
 })(roots);
-const frames = canvases.flatMap((c) => c.children.filter((n) => n.type === 'FRAME'));
+const frames = [];
+(function collectFrames(list) {
+  for (const n of list) {
+    if (n.type === 'FRAME') frames.push(n);
+    else if (n.type === 'SECTION') collectFrames(n.children ?? []);
+  }
+})(canvases.flatMap((c) => c.children));
 
 let rawTotal = 0;
 let irTotal = 0;
@@ -65,7 +72,14 @@ for (const frame of frames) {
   // --- raw pass: count what we are handed, and what we throw away ---
   // walking stops at icon clusters and hidden nodes, so their subtrees are tallied
   // whole rather than visited — the totals below have to add back up to rawTotal
-  (function walk(node) {
+  (function walk(raw) {
+    // an instance is a stand-in for its master: everything below is about what
+    // actually renders, so swap in the master before counting anything
+    const master = raw.type === 'INSTANCE' && raw.symbolData
+      && symbols.get(`${raw.symbolData.symbolID.sessionID}:${raw.symbolData.symbolID.localID}`);
+    if (master) rawTotal += subtreeSize(master) - 1;
+    const node = master ? { ...master, transform: raw.transform, size: raw.size, visible: raw.visible } : raw;
+
     if (node.visible === false) {
       invisibleTotal += subtreeSize(node);
       bump('invisible nodes (visible: false)');
@@ -116,7 +130,7 @@ for (const frame of frames) {
   })(frame);
 
   // --- IR pass: how many nodes actually survive ---
-  const ir = toIR(frame, blobs);
+  const ir = toIR(frame, blobs, { symbols });
   (function count(n) {
     irTotal++;
     (n.children ?? []).forEach(count);

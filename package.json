@@ -2,7 +2,7 @@
   "name": "fig-parser",
   "type": "module",
   "scripts": {
-    "test": "node src/parse.test.mjs && node src/mcp.test.mjs",
+    "test": "node src/parse.test.mjs && node src/components.test.mjs && node src/mcp.test.mjs",
     "mcp": "node src/mcp.mjs",
     "census": "node src/census.mjs"
   },

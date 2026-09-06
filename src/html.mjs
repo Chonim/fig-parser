@@ -42,7 +42,7 @@ function className(node, seen) {
 
 function boxRules(node, parentLayout) {
   const rules = [];
-  const positioned = node.role === 'backdrop' || parentLayout?.mode === 'absolute';
+  const positioned = node.role === 'backdrop' || parentLayout?.mode === 'absolute' || node.flexChild?.absolute;
   if (positioned) {
     rules.push(['position', 'absolute'], ['left', px(node.box.x)], ['top', px(node.box.y)]);
   }
@@ -72,6 +72,9 @@ function styleRules(node, parentLayout, assetUrl) {
   // Figma rotates about the top-left of the unrotated box, unlike CSS's default centre
   if (node.box.transform) rules.push(['transform', node.box.transform], ['transform-origin', '0 0']);
 
+  if (node.flexChild?.alignSelf) rules.push(['align-self', node.flexChild.alignSelf]);
+  if (node.flexChild?.grow) rules.push(['flex-grow', String(node.flexChild.grow)]);
+
   if (node.role === 'image') {
     rules.push(['object-fit', OBJECT_FIT[node.asset.scaleMode] ?? 'cover']);
   }
@@ -98,6 +101,7 @@ function styleRules(node, parentLayout, assetUrl) {
   if (l?.mode === 'flex') {
     rules.push(['display', 'flex'], ['flex-direction', l.direction]);
     if (l.gap) rules.push(['gap', px(l.gap)]);
+    if (l.justify) rules.push(['justify-content', l.justify]);
     if (l.align) rules.push(['align-items', l.align]);
     const p = l.padding;
     if (p && (p.t || p.r || p.b || p.l)) rules.push(['padding', [p.t, p.r, p.b, p.l].map(px).join(' ')], ['box-sizing', 'border-box']);
