@@ -458,6 +458,38 @@ assert.ok(reach.text >= 871, `text reached fell to ${reach.text}/${reach.textTot
 assert.ok(reach.nodes >= 2559, `nodes reached fell to ${reach.nodes}/${reach.nodeTotal}, was 2559`);
 assert.ok(reach.truncated <= 20, `${reach.truncated} frames truncated, was 20`);
 
+// --- derivedSymbolData: what a guidPath addresses ---
+// Figma stores, per instance, what it recomputed for that copy. Reading it starts with
+// knowing what the path means, and the naive answer is wrong: keying by the last guid
+// collides 126 times inside a single instance, because the same node inside a shared
+// master is reached down two different chains. The full path never collides.
+//
+// Within one master, a path is a single guid and addresses a node anywhere in that
+// master's subtree — depth 1 through 5 here, all with one-element paths. A longer path
+// crosses an instance boundary: [a, b] means a is a nested instance inside this master
+// and b is a node inside a's own master.
+const derivedKey = (g) => `${g.sessionID}:${g.localID}`;
+let derivedEntries = 0, byLastCollisions = 0, byPathCollisions = 0;
+const pathLengths = new Set();
+for (const node of message.nodeChanges) {
+  const entries = node.derivedSymbolData;
+  if (!entries?.length) continue;
+  const byLast = new Map(), byPath = new Map();
+  for (const e of entries) {
+    derivedEntries += 1;
+    const path = e.guidPath.guids.map(derivedKey);
+    pathLengths.add(path.length);
+    byLast.set(path.at(-1), (byLast.get(path.at(-1)) ?? 0) + 1);
+    byPath.set(path.join('/'), (byPath.get(path.join('/')) ?? 0) + 1);
+  }
+  for (const v of byLast.values()) if (v > 1) byLastCollisions += v - 1;
+  for (const v of byPath.values()) if (v > 1) byPathCollisions += v - 1;
+}
+assert.equal(derivedEntries, 2336, `derived entries moved to ${derivedEntries}`);
+assert.deepEqual([...pathLengths].sort(), [1, 2, 3], 'paths are no longer 1 to 3 guids long');
+assert.equal(byPathCollisions, 0, 'the full guid path is no longer a unique key inside an instance');
+assert.ok(byLastCollisions > 0, 'the last guid no longer collides — the cheap key may now be safe, re-check before using it');
+
 console.log(`ok — reach ${reach.text}/${reach.textTotal} text, ${reach.slack} slack; ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
   `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames, ` +
   `${authored.length} tokens named from variables, ${catalogue.variables.length} variables in ${catalogue.sets.length} sets`);
