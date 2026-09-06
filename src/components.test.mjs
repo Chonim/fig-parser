@@ -144,6 +144,7 @@ assert.ok(throughWrapper.layout.repeat.count >= 3, 'repeat below its own thresho
 let constrained = 0;
 let perSide = 0;
 let clamped = 0;
+let truncated = 0;
 let outside = 0;
 for (const f of frames) {
   const ir = toIR(f, message.blobs, { symbols, variables });
@@ -151,7 +152,8 @@ for (const f of frames) {
   (function walk(n) {
     if (n.constraints) constrained++;
     if (n.style?.border?.sides) perSide++;
-    if (n.text?.maxLines || n.text?.truncate) clamped++;
+    if (n.text?.maxLines) clamped++;
+    if (n.text?.truncate) truncated++;
     if (n.style?.border?.align === 'OUTSIDE') outside++;
     n.children?.forEach(walk);
   })(ir);
@@ -159,7 +161,8 @@ for (const f of frames) {
 // SCALE is the default and says nothing, so only a real constraint is reported
 assert.ok(constrained > 100, `only ${constrained} nodes report a constraint`);
 assert.ok(perSide > 5, `only ${perSide} nodes report per-side border weights`);
-assert.ok(clamped > 20, `only ${clamped} text nodes report a line clamp`);
+assert.ok(clamped > 20, `only ${clamped} text nodes report a line count`);
+assert.ok(truncated > 20, `only ${truncated} text nodes report ellipsis truncation`);
 
 // a single rule has to render as one edge, not a box
 const oneEdge = (() => {
