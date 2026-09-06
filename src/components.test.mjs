@@ -398,10 +398,10 @@ for (const frame of frames) {
       icons += 1;
       const [vx, vy, vw, vh] = n.asset.viewBox.split(' ').map(Number);
       const ink = inkOf(n.asset.paths);
-      // a stroke outline reaches a little past the box by design; 25% is a different
+      // a stroke outline reaches a little past the box by design; 10% is a different
       // scale — unless the cluster came from a container that crops it, where the ink
       // is meant to run past the edge and the <svg> cuts it there
-      if (!n.style?.clip && (ink.x1 > vx + vw * 1.25 || ink.y1 > vy + vh * 1.25)) {
+      if (!n.style?.clip && (ink.x1 > vx + vw * 1.1 || ink.y1 > vy + vh * 1.1)) {
         spilling.push(`${frame.name || frame.id}/${n.name}: ink ${ink.x1.toFixed(0)}×${ink.y1.toFixed(0)} in viewBox ${n.asset.viewBox}`);
       }
     }

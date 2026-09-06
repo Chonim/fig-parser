@@ -361,17 +361,7 @@ function svgPaint(paint, defs) {
 const visiblePaint = (list) => list?.find((p) => p.visible !== false && p.type !== 'IMAGE');
 
 function collectPaths(node, blobs, parent, out, defs, variables) {
-  // An instance draws its master's content, which is laid out in the master's own
-  // coordinate space, and the instance is free to be a different size — every Icon24
-  // master here is 24×24 and every use of one is 16 or 12. Scale the subtree by the
-  // ratio the instance was resized by, or the glyph is drawn at the master's scale
-  // and hangs out of the box: the tag chips' check marks sat below their own chip.
-  const s = node.pathSpace && node.size
-    ? { m00: node.size.x / node.pathSpace.x, m01: 0, m02: 0, m10: 0, m11: node.size.y / node.pathSpace.y, m12: 0 }
-    : undefined;
-  const m = s
-    ? matMul(matMul(parent, node.transform ?? IDENTITY), s)
-    : matMul(parent, node.transform ?? IDENTITY);
+  const m = matMul(parent, node.transform ?? IDENTITY);
   const transform = isIdentity(m)
     ? (m.m02 || m.m12 ? `translate(${round(m.m02)} ${round(m.m12)})` : undefined)
     : `matrix(${[m.m00, m.m10, m.m01, m.m11, m.m02, m.m12].map(num).join(' ')})`;
@@ -962,6 +952,11 @@ function expandInstance(node, symbols) {
     const fields = {};
     if (d.size) fields.size = d.size;
     if (d.transform) fields.transform = d.transform;
+    // Figma re-outlines a stroke at the size this copy ended up, so these paths are
+    // already in the instance's own space. Its 336 re-derived fillGeometry entries
+    // change nothing in either sample — not one line of 109 rendered frames — so they
+    // stay unread rather than becoming code no file here can check.
+    if (d.strokeGeometry) fields.strokeGeometry = d.strokeGeometry;
     if (Object.keys(fields).length) derived.set(guidKey(d.guidPath.guids[0]), fields);
   }
   const apply = (n) => {
@@ -983,14 +978,6 @@ function expandInstance(node, symbols) {
   const FROM_MASTER = new Set(['type', 'children', 'symbolData', 'derivedSymbolData', 'symbolLinks']);
   const own = Object.fromEntries(Object.entries(node).filter(([k, v]) => v !== undefined && !FROM_MASTER.has(k)));
   const expanded = { ...apply(master), ...own, children: apply(master).children };
-  // The content comes from the master, so it is laid out in the master's coordinate
-  // space — and an instance is free to be a different size. Every Icon24 master here
-  // is 24×24 and every use of one is 16 or 12, so the paths arrive at twice the scale
-  // of the box that is about to frame them. Remember the space they are in; the icon
-  // branch turns it into the viewBox, which is what scales them back down.
-  const resized = master.size && node.size
-    && (Math.abs(master.size.x - node.size.x) > 0.5 || Math.abs(master.size.y - node.size.y) > 0.5);
-  if (resized) expanded.pathSpace = master.size;
   return expanded;
 }
 
