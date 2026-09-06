@@ -38,6 +38,8 @@ const roots = buildTree(nodeChanges);
 const symbols = symbolIndex(roots);
 const frames = collectFrames(roots);
 
+// per frame, so a surplus in one cannot cancel a shortfall in another
+const ledger = [];
 let rawTotal = 0;
 let irTotal = 0;
 let collapsedTotal = 0;
@@ -57,6 +59,7 @@ const subtreeSize = (n) => 1 + (n.children ?? []).reduce((a, c) => a + subtreeSi
 })({ children: frames });
 
 for (const frame of frames) {
+  const before = { raw: rawTotal, ir: irTotal, collapsed: collapsedTotal, invisible: invisibleTotal, consumed: consumedTotal };
   rawTotal += subtreeSize(frame);
 
   // --- raw pass: count what we are handed, and what we throw away ---
@@ -121,26 +124,46 @@ for (const frame of frames) {
 
   // --- IR pass: how many nodes actually survive ---
   const ir = toIR(frame, blobs, { symbols, variables: variableIndex(nodeChanges) });
-  (function count(n) {
-    irTotal++;
-    (n.children ?? []).forEach(count);
-  })(ir);
+  if (ir) {
+    (function count(n) {
+      irTotal++;
+      (n.children ?? []).forEach(count);
+    })(ir);
+  }
+
+  const raw = rawTotal - before.raw;
+  const entry = {
+    name: frame.name || `(unnamed ${frame.id})`,
+    raw,
+    ir: irTotal - before.ir,
+    collapsed: collapsedTotal - before.collapsed,
+    invisible: invisibleTotal - before.invisible,
+    consumed: consumedTotal - before.consumed,
+  };
+  entry.delta = entry.raw - (entry.ir + entry.collapsed + entry.invisible + entry.consumed);
+  ledger.push(entry);
 }
 
 bump('vector-network-only blobs', badBlob.size);
 
 const reached = irTotal + collapsedTotal + invisibleTotal + consumedTotal;
-const lost = rawTotal - reached;
-if (lost > 0) bump('nodes that vanished between raw tree and IR', lost);
+// a signed total lets a surplus in one frame hide a shortfall in another: matsq
+// balanced at -18 while actually being +48 over seven frames and -66 over four
+const offBy = ledger.filter((f) => f.delta !== 0);
+const drift = offBy.reduce((a, f) => a + Math.abs(f.delta), 0);
+if (drift) bump(`nodes unaccounted for across ${offBy.length} frames`, drift);
 
 // --- report ---
 const rows = [...tally.entries()].sort((a, b) => b[1] - a[1]);
 const width = Math.max(...rows.map(([k]) => k.length));
-const note = (k) => IGNORED[k] ?? (k.includes('vanished') ? 'investigate — should be 0' : 'see TASKS.md');
+const note = (k) => IGNORED[k] ?? (k.includes('unaccounted') ? 'investigate — must be 0' : 'see TASKS.md');
 
 console.log(`\n${FILE} — ${frames.length} frames, ${rawTotal} raw nodes, ${irTotal} IR nodes ` +
   `(${collapsedTotal} collapsed into icons, ${consumedTotal} folded into masks, ${invisibleTotal} invisible)\n`);
 console.log(`${'finding'.padEnd(width)}  count  note`);
 console.log(`${'-'.repeat(width)}  -----  ----`);
 for (const [k, v] of rows) console.log(`${k.padEnd(width)}  ${String(v).padStart(5)}  ${note(k)}`);
+for (const f of offBy.slice(0, 8)) {
+  console.log(`  ${f.delta > 0 ? '+' : ''}${f.delta}  ${f.name}  (raw ${f.raw} = ir ${f.ir} + collapsed ${f.collapsed} + folded ${f.consumed} + invisible ${f.invisible})`);
+}
 console.log();
