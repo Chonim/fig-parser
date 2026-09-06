@@ -24,6 +24,17 @@ const isGroup = (node) => node.resizeToFit === true;
 const VECTOR_TYPES = new Set(['VECTOR', 'BOOLEAN_OPERATION', 'LINE', 'STAR', 'REGULAR_POLYGON']);
 
 /**
+ * A LINE is an open path with no area, so "inside" and "outside" name nothing and Figma
+ * draws no stroke at all. It still writes one out: the ARCHIVE table's eleven row
+ * separators each carry a 1244x1 strokeGeometry, and painting it ruled the table with
+ * lines Figma's own export does not have. The file marks the difference too — these
+ * carry an empty fillGeometry that a CENTER-aligned line does not. Only OUTSIDE occurs
+ * across both samples; INSIDE is the same argument. The node still reaches the IR, with
+ * no ink on it, because it is in the design and census has to be able to account for it.
+ */
+const strokeHasNoSide = (node) => node.type === 'LINE' && node.strokeAlign !== undefined && node.strokeAlign !== 'CENTER';
+
+/**
  * What this layer can express today. census.mjs reads these instead of keeping its
  * own copy, so the report cannot drift away from what the code actually does.
  * `approximated` means it renders, but not faithfully yet.
@@ -412,6 +423,7 @@ function collectPaths(node, blobs, parent, out, defs, variables) {
   const outlineOnly = node.type === 'BOOLEAN_OPERATION' && node.strokePaints?.some((p) => p.visible !== false);
   for (const [i, [list, fill, token]] of geometries.entries()) {
     if (outlineOnly && i === 0) continue;
+    if (strokeHasNoSide(node) && i === 1) continue;
     if (fill === 'none') continue;
     for (const geom of list ?? []) {
       const blob = blobs[geom.commandsBlob];
@@ -1085,7 +1097,7 @@ export function toIR(node, blobs, options = {}) {
     return { ...base, role: 'text', text, style: { opacity: node.opacity ?? 1 }, children: [] };
   }
 
-  if (isIconCluster(node)) {
+  if (isIconCluster(node) && !strokeHasNoSide(node)) {
     const paths = [];
     const defs = [];
     // paths are collected in the cluster's own coordinate space, so cancel its transform
@@ -1118,7 +1130,7 @@ export function toIR(node, blobs, options = {}) {
   const style = {
     fill: image ? undefined : fillOf(node),
     radius: radius(node) ?? (mask ? radius(mask) : undefined),
-    border: border(node),
+    border: strokeHasNoSide(node) ? undefined : border(node),
     shadow: shadow(node),
     blend: blendOf(node),
     // Figma's "clip content" is this flag inverted, and it decides whether a child

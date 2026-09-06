@@ -129,7 +129,12 @@ These are pinned by tests. A red suite is usually one of these, not new code.
     that splits the two groups here, and cutting on it takes the 12 frames from 658,802 to
     540,001 differing pixels with none getting worse — dropping every boolean's fill is worse.
     The reason is not established, which is why `pnpm diff` is the thing that pins it.
-13. **Figma calling a frame auto-layout does not make it a flex row.** Where the children it
+13. **An open path has no inside or outside.** A `LINE` has no area, so `strokeAlign`
+    INSIDE/OUTSIDE names nothing and Figma draws no stroke — while still writing the outlined
+    geometry into the file. The ARCHIVE table's 11 row separators each carry a 1244x1
+    `strokeGeometry`, and painting it ruled the table with lines Figma's own export does not
+    have. The node stays in the IR without ink; dropping it left census 15 nodes short.
+14. **Figma calling a frame auto-layout does not make it a flex row.** Where the children it
     recomputed overlap on the main axis — a filling label with icons drawn over its ends — flex
     would push them apart. The stack settings stay reported; the placement falls back to the
     coordinates. 32 boxes in the design-system file.

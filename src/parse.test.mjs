@@ -291,19 +291,35 @@ assert.ok(!flat.some((n) => n.layout?.repeat), 'login frame has no list, but one
 const tableFrame = canvas.children.find((c) => c.id === '2097:1156');
 const tableIR = toIR(tableFrame, message.blobs);
 
-// --- stroke geometry arrives already outlined ---
-// The 11 dividers in this table have no fillGeometry at all: their ink is entirely
-// strokeGeometry, painted like a fill. Dropping that list leaves them empty, and
-// only this frame notices — the components suite catches it by side effect.
+// --- stroke geometry arrives already outlined, but not on an open path ---
+// A LINE's ink is entirely strokeGeometry, painted like a fill: drop that list and it
+// renders empty. That holds only where the stroke is CENTER-aligned. This table's 11
+// row separators are LINEs asking for an OUTSIDE stroke, and an open path has no
+// outside — Figma writes the outlined geometry out anyway and then draws none of it,
+// so painting it ruled the table with lines its own export does not have.
+const lineIR = (frameId, name) => {
+  const found = [];
+  (function walk(n) {
+    if (n.name === name && n.asset?.kind === 'svg') found.push(n);
+    n.children?.forEach(walk);
+  })(toIR(collectFrames(roots).find((f) => f.id === frameId), message.blobs));
+  return found[0];
+};
 const dividers = [];
-(function walk(n) { if (/^Line /.test(n.name ?? '') && n.asset?.kind === 'svg') dividers.push(n); n.children?.forEach(walk); })(tableIR);
-assert.ok(dividers.length >= 8, `expected stroke-only dividers, found ${dividers.length}`);
-assert.ok(dividers.every((d) => d.asset.paths.length > 0), 'a stroke-only shape produced no path');
-assert.ok(dividers.every((d) => d.asset.paths.every((p) => /^M/.test(p.d) && p.fill !== 'none')), 'divider ink is unpainted');
+(function walk(n) { if (/^Line /.test(n.name ?? '')) dividers.push(n); n.children?.forEach(walk); })(tableIR);
+assert.ok(dividers.length >= 8, `the table's row separators left the IR entirely, found ${dividers.length}`);
+assert.equal(
+  dividers.filter((d) => d.asset?.paths?.length || d.style?.border).length,
+  0,
+  'the table\'s OUTSIDE-aligned row separators are being drawn; Figma draws none of them',
+);
+const centred = lineIR('2157:1336', 'Line 25');
+assert.ok(centred?.asset.paths.length, 'a CENTER-aligned line lost its stroke — strokeGeometry is the only ink it has');
+assert.ok(centred.asset.paths.every((p) => /^M/.test(p.d) && p.fill !== 'none'), 'a divider\'s ink is unpainted');
 // a hairline's node box has no height; a viewBox taken from it cannot scale and
 // the browser draws nothing, so those take their size from the ink instead
-assert.ok(dividers.every((d) => d.box.h > 0), 'a divider still has a zero-height box');
-assert.ok(dividers.every((d) => !/ 0$/.test(d.asset.viewBox)), 'a viewBox still has no height');
+assert.ok(centred.box.h > 0, 'a divider still has a zero-height box');
+assert.ok(!/ 0$/.test(centred.asset.viewBox), 'a viewBox still has no height');
 // everywhere else the box is kept and the outlined stroke is allowed to overflow
 assert.match(renderHTML(tableIR), /<svg[^>]* overflow="visible"/, 'icons still clip to their viewBox');
 

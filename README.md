@@ -190,7 +190,7 @@ render is wrong, by comparing it to Figma's own export. `REFS.md` says how to ge
 in — one page-wide PNG through `pnpm refs:slice` is enough. kyowon-full's 12 frames are covered,
 and `TASKS.md` has what that comparison found: one full screen matches to 0.146%, the frames that
 do not were each wrong in one identified place, and fixing two of those took the twelve frames
-from 719,774 differing pixels to 540,001.
+from 719,774 differing pixels to 523,871.
 
 Run `pnpm census <file.fig>` against your own file to see what this drops on it. Rows marked
 `deliberate` are accounted for — duplicate vector-network blobs, invisible nodes, and variables
