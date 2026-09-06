@@ -241,6 +241,49 @@ const many = await call('find_nodes', { file: LIBRARY, query: 'a' });
 assert.ok(many.content[0].text.length <= BUDGET, `find_nodes returned ${many.content[0].text.length} B`);
 assert.ok(json(many).truncated === undefined || json(many).truncated > 0, 'a truncated result does not say so');
 
+// --- the descriptions a model reads are an interface, so run them ---
+// get_frame's schema said `depth: 1 = this node only` while it returned the node with
+// its children as stubs. Nothing looked at that sentence. Each parameter now carries
+// its claims as data — the sentence is generated from them and this executes them, so
+// the two cannot drift apart without one of them failing.
+// .optional() wraps the schema, and both the description and the claims sit inside
+const core = (schema) => (schema?.claims || schema?.description ? schema : schema?.unwrap?.() ?? schema);
+const claims = TOOLS.flatMap((t) =>
+  Object.entries(t.inputSchema).flatMap(([param, schema]) =>
+    (core(schema).claims ?? []).map((c) => ({ tool: t.name, param, ...c }))));
+assert.ok(claims.length >= 12, `only ${claims.length} parameter claims are runnable`);
+for (const t of TOOLS) {
+  assert.ok(t.title, `${t.name} has no title`);
+  assert.ok(t.description?.length > 40, `${t.name}'s description is ${t.description?.length ?? 0} characters`);
+  const params = Object.entries(t.inputSchema);
+  assert.ok(params.length > 0, `${t.name} declares no inputs, not even file`);
+  for (const [param, schema] of params) {
+    assert.ok(core(schema).description, `${t.name}.${param} has no description for a model to read`);
+  }
+  // file is the one parameter every tool takes, and the confinement rides on it
+  assert.ok(t.inputSchema.file, `${t.name} does not take a file`);
+}
+// A default spelled out by hand can disagree with the code even when the behaviour is
+// asserted, so the numbers in the sentences have to come from the tool's own defaults.
+for (const t of TOOLS) {
+  for (const [param, schema] of Object.entries(t.inputSchema)) {
+    for (const m of (core(schema).description ?? '').matchAll(/default ([^;)\]]+)/g)) {
+      const declared = Object.values(t.defaults ?? {}).map(String);
+      assert.ok(
+        declared.includes(m[1].trim()),
+        `${t.name}.${param} advertises "default ${m[1].trim()}" and the tool's defaults are ${JSON.stringify(t.defaults ?? null)}`,
+      );
+    }
+  }
+}
+
+for (const c of claims) {
+  const res = await call(c.tool, c.run);
+  const body = res.content[0].text;
+  const value = res.isError ? { error: body } : (() => { try { return JSON.parse(body); } catch { return body; } })();
+  assert.ok(c.check(value, body), `${c.tool}.${c.param} — "${c.when} = ${c.then}" is not what it does`);
+}
+
 proc.kill();
 
 // --- what one call actually reaches ---

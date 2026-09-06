@@ -309,6 +309,29 @@ const wrap = (fn) => async (args) => {
   }
 };
 
+/**
+ * A parameter's description is the only manual a model gets, and nothing used to read
+ * it: get_frame's said `depth: 1 = this node only` while it returned the node with its
+ * children as stubs. So a claim is data — a case, what it does, and a call that shows
+ * it — the sentence is generated from the cases, and mcp.test.mjs runs them. Editing
+ * the sentence means editing a case, and a case that lies fails.
+ */
+const claim = (schema, lead, cases = [], tail) => {
+  const spelled = cases.map((c) => `${c.when} = ${c.then}`).join('; ');
+  const out = schema.describe([lead, spelled, tail].filter(Boolean).join(spelled ? '; ' : ''));
+  out.claims = cases;
+  return out;
+};
+
+// named once, so the sentence a model reads and the value the code uses cannot differ
+const FIND_DEFAULTS = { field: 'both', limit: 40 };
+const HTML_DEFAULTS = { assetDir: 'assets' };
+const LOGIN = '2063:280';
+const SAMPLE = 'samples/kyowon-full.fig';
+const isStub = (c) => typeof c === 'object' && c !== null && !('style' in c) && !('layout' in c);
+
+// shared, and deliberately claim-free: a claim is a call, and the same call cannot be
+// meaningful for seven different tools. Each tool states its own below.
 const file = z.string().describe('.fig file path, relative to FIG_ROOT');
 const frame = z.string().describe('frame name or id from list_frames');
 
@@ -356,11 +379,28 @@ tool(
       'top to bottom and left to right, as space-separated indices into that node\'s own children. ' +
       'Large frames come back truncated; the placeholder text names the id to pass back as `select` to go deeper.',
     inputSchema: {
-      file,
-      frame,
-      select: z.string().optional().describe('id or name of a node to return instead of the whole frame'),
-      depth: z.number().int().min(1).optional().describe('levels of nesting to describe; 1 = this node with its children listed as stubs (default: as deep as the budget allows)'),
-      includePaths: z.boolean().optional().describe('inline raw SVG path data (large; usually you want export_assets instead)'),
+      file: claim(z.string(), '.fig file path, relative to FIG_ROOT', [
+        { when: 'a path that climbs out of FIG_ROOT', then: 'refused',
+          run: { file: '../../../etc/passwd', frame: LOGIN }, check: (v) => Boolean(v.error) },
+      ]),
+      frame: claim(z.string(), 'frame name or id from list_frames', [
+        { when: 'an id', then: 'that frame', run: { file: SAMPLE, frame: LOGIN }, check: (v) => v.id === LOGIN },
+        { when: 'a name', then: 'the same frame', run: { file: SAMPLE, frame: '온라인학습_Login' }, check: (v) => v.id === LOGIN },
+      ]),
+      select: claim(z.string(), 'id or name of a node to return instead of the whole frame', [
+        { when: 'the id of a node inside the frame', then: 'that node, as the root of the answer',
+          run: { file: SAMPLE, frame: LOGIN, select: '2063:289' }, check: (v) => v.id === '2063:289' },
+      ]).optional(),
+      depth: claim(z.number().int().min(1), 'levels of nesting to describe', [
+        { when: '1', then: 'this node with its children listed as stubs',
+          run: { file: SAMPLE, frame: LOGIN, depth: 1 },
+          check: (v) => Array.isArray(v.children) && v.children.length > 0 && v.children.every(isStub) },
+      ], 'omit for as deep as the budget allows').optional(),
+      includePaths: claim(z.boolean(), 'inline raw SVG path data (large; usually you want export_assets instead)', [
+        { when: 'true', then: 'every bezier in the response, so it far outgrows the summary',
+          run: { file: SAMPLE, frame: LOGIN, includePaths: true },
+          check: (v, body) => body.includes('"d":') && body.length > 40_000 },
+      ]).optional(),
     },
   },
   wrap(({ file, frame, select, depth, includePaths = false }) => {
@@ -377,19 +417,41 @@ tool(
   'find_nodes',
   {
     title: 'Find nodes',
+    defaults: FIND_DEFAULTS,
     description:
       'Nodes whose text or name contains a string, across one frame or the whole file. '
       + 'Returns the id to pass to get_frame(select:), the ancestors that lead to it, and its box — '
       + 'so "where is the thing that says X" costs one call instead of paging through a frame.',
     inputSchema: {
       file,
-      query: z.string().describe('substring to look for, case-insensitive'),
-      frame: frame.optional().describe('one frame; omit to search the whole file'),
-      field: z.enum(['text', 'name', 'both']).optional().describe('what to match against (default both)'),
-      limit: z.number().int().positive().optional().describe('most matches to return (default 40)'),
+      query: claim(z.string(), 'substring to look for, case-insensitive', [
+        { when: 'a string the design contains', then: 'the nodes carrying it, with the id to select and the ancestors that lead there',
+          run: { file: SAMPLE, query: '로그인' },
+          check: (v) => v.matches.length > 0 && v.matches.every((m) => m.id && Array.isArray(m.path)) },
+        { when: 'different casing', then: 'the same matches',
+          run: { file: SAMPLE, query: 'RECTANGLE', field: 'name' }, check: (v) => v.matches.length > 0 },
+      ]),
+      frame: claim(z.string(), 'one frame', [
+        { when: 'given', then: 'only that frame is searched',
+          run: { file: SAMPLE, query: 'Rectangle', field: 'name', frame: LOGIN },
+          check: (v) => v.matches.every((m) => m.frame === LOGIN) },
+      ], 'omit to search the whole file').optional(),
+      field: claim(z.enum(['text', 'name', 'both']), 'what to match against', [
+        { when: "'name'", then: 'layer names only, never the text in the design',
+          run: { file: SAMPLE, query: '로그인', field: 'name' },
+          check: (v) => v.matches.every((m) => m.name.includes('로그인')) },
+      ], `default ${FIND_DEFAULTS.field}`).optional(),
+      limit: claim(z.number().int().positive(), 'most matches to return', [
+        { when: 'a number', then: 'at most that many, with the rest counted as truncated',
+          run: { file: SAMPLE, query: 'e', limit: 3 },
+          check: (v) => v.matches.length <= 3 && v.truncated > 0 },
+        { when: 'omitted', then: `${FIND_DEFAULTS.limit}`,
+          run: { file: SAMPLE, query: 'e' },
+          check: (v) => v.matches.length === FIND_DEFAULTS.limit && v.truncated > 0 },
+      ], `default ${FIND_DEFAULTS.limit}`).optional(),
     },
   },
-  wrap(({ file, query, frame: only, field = 'both', limit = 40 }) => {
+  wrap(({ file, query, frame: only, field = FIND_DEFAULTS.field, limit = FIND_DEFAULTS.limit }) => {
     const doc = load(file);
     const needle = query.toLowerCase();
     const frames = only
@@ -430,12 +492,24 @@ tool(
   'get_html',
   {
     title: 'Get reference HTML',
+    defaults: HTML_DEFAULTS,
     description:
       'Render the frame to standalone HTML + CSS straight from the IR. This is the geometric baseline: ' +
       'pixel-accurate but structurally naive. Use it to check your own markup against, not to ship.',
-    inputSchema: { file, frame, assetDir: z.string().optional().describe('href prefix for images (default: assets)') },
+    inputSchema: {
+      file,
+      frame,
+      assetDir: claim(z.string(), 'href prefix for images', [
+        { when: 'a prefix', then: 'every image src starts with it',
+          run: { file: SAMPLE, frame: LOGIN, assetDir: 'img' },
+          check: (v, body) => body.includes('src="img/') && !body.includes('src="assets/') },
+        { when: 'omitted', then: HTML_DEFAULTS.assetDir,
+          run: { file: SAMPLE, frame: LOGIN },
+          check: (v, body) => body.includes(`src="${HTML_DEFAULTS.assetDir}/`) },
+      ], `default ${HTML_DEFAULTS.assetDir}`).optional(),
+    },
   },
-  wrap(({ file, frame, assetDir = 'assets' }) => {
+  wrap(({ file, frame, assetDir = HTML_DEFAULTS.assetDir }) => {
     const { ir } = frameIR(file, frame);
     return renderHTML(ir, { assetUrl: (h) => `${assetDir}/${h}.png` });
   }),
@@ -446,7 +520,15 @@ tool(
   {
     title: 'Export frame images',
     description: 'Write the frame\'s raster images (<hash>.png) and collapsed icon clusters (<name>.svg) to outDir, and return the paths.',
-    inputSchema: { file, frame, outDir: z.string().describe('output directory, relative to FIG_ROOT') },
+    inputSchema: {
+      file,
+      frame,
+      outDir: claim(z.string(), 'output directory, relative to FIG_ROOT', [
+        { when: 'a directory', then: 'a file per asset, keyed by hash, each saying which nodes wanted it',
+          run: { file: SAMPLE, frame: LOGIN, outDir: 'out/claim-check' },
+          check: (v) => Object.values(v).every((a) => a.file?.startsWith('out/claim-check/') && Array.isArray(a.usedBy)) },
+      ]),
+    },
   },
   wrap(({ file, frame, outDir }) => {
     const { doc, ir } = frameIR(file, frame);
@@ -496,8 +578,16 @@ tool(
       'This is what the author declared; get_tokens reports what one frame actually uses.',
     inputSchema: {
       file,
-      set: z.string().optional().describe('only variables from this set (substring, case-insensitive)'),
-      frame: z.string().optional().describe('only variables this frame actually binds'),
+      set: claim(z.string(), 'only variables from this set (substring, case-insensitive)', [
+        { when: 'a set name', then: 'nothing from any other set',
+          run: { file: 'samples/matsq.fig', set: 'color' },
+          check: (v) => v.variables.length > 0 && v.variables.every((x) => /color/i.test(x.set)) },
+      ]).optional(),
+      frame: claim(z.string(), 'only variables this frame actually binds', [
+        { when: 'a frame', then: 'fewer than the whole file declares',
+          run: { file: 'samples/matsq.fig', frame: '43:783' },
+          check: (v) => v.variables.length > 0 && v.variables.length < 581 },
+      ]).optional(),
     },
   },
   wrap(({ file, set, frame }) => {
@@ -559,7 +649,14 @@ tool(
   {
     title: 'Get design tokens',
     description: 'Colors and text styles used in a frame (or the whole file), deduped and ranked by usage, as CSS custom properties.',
-    inputSchema: { file, frame: frame.optional() },
+    inputSchema: {
+      file,
+      frame: claim(z.string(), 'one frame', [
+        { when: 'given', then: 'only what that frame uses',
+          run: { file: SAMPLE, frame: LOGIN },
+          check: (v) => v.colors.length > 0 && v.colors.length < 40 },
+      ], 'omit for the whole file').optional(),
+    },
   },
   wrap(({ file, frame }) => {
     if (frame) return extractTokens(frameIR(file, frame).ir);

@@ -56,17 +56,25 @@ README:92–103 표와 `src/mcp.mjs`의 `describe()` 문자열. **모델이 읽�
 
 | # | 주장 | 담당 | 상태 |
 | --- | --- | --- | --- |
-| C1 | 모든 도구가 `file`을 받고 `FIG_ROOT` 아래로 제한된다 | 1-1 | 미검증 |
-| C2 | `get_frame.select` — id 또는 이름으로 그 노드만 | 1-1 | 미검증 |
-| C3 | `get_frame.depth` — 서술할 깊이, `1`이면 노드 + 자식 스텁 | 1-1 | 미검증 |
-| C4 | `get_frame.includePaths` — 원시 path 데이터 인라인 | 1-1 | 미검증 |
-| C5 | `find_nodes` — `query`(부분일치·대소문자 무시) `frame` `field` `limit`(기본 40) | 1-1 | 미검증 |
-| C6 | `get_html.assetDir` — 이미지 href 접두사, 기본 `assets` | 1-1 | 미검증 |
-| C7 | `export_assets` — `{ hash: { file, usedBy } }` 반환 | 1-1 | 미검증 |
-| C8 | `get_tokens.frame` — 생략하면 파일 전체 | 1-1 | 미검증 |
-| C9 | `get_variables` — `set`(부분일치) `frame`(그 프레임이 묶은 것만) | 1-1 | 미검증 |
+| C1 | 모든 도구가 `file`을 받고 `FIG_ROOT` 아래로 제한된다 | 1-1 | 검증(mcp.test: TOOLS 전수 + get_frame.file 주장) |
+| C2 | `get_frame.select` — id 또는 이름으로 그 노드만 | 1-1 | 검증(주장 실행) |
+| C3 | `get_frame.depth` — 서술할 깊이, `1`이면 노드 + 자식 스텁 | 1-1 | 검증(주장 실행 — 원래 오류가 여기였다) |
+| C4 | `get_frame.includePaths` — 원시 path 데이터 인라인 | 1-1 | 검증(주장 실행) |
+| C5 | `find_nodes` — `query`(부분일치·대소문자 무시) `frame` `field` `limit`(기본 40) | 1-1 | 검증(주장 6건, 기본값은 상수에서 생성) |
+| C6 | `get_html.assetDir` — 이미지 href 접두사, 기본 `assets` | 1-1 | 검증(지정/생략 양쪽) |
+| C7 | `export_assets` — `{ hash: { file, usedBy } }` 반환 | 1-1 | 검증(주장 실행) |
+| C8 | `get_tokens.frame` — 생략하면 파일 전체 | 1-1 | 검증(주장 실행) |
+| C9 | `get_variables` — `set`(부분일치) `frame`(그 프레임이 묶은 것만) | 1-1 | 검증(주장 2건) |
 | C10 | `depth`/`includePaths`는 30KB 예산을 우회한다 | 1-1 | **버그로 판정** — 응답은 항상 예산 이하여야 한다 |
 | C11 | 도구는 7개다 | 1-2 | 검증(mcp.test.mjs: TOOLS 길이) |
+
+### 1-1이 만든 규약
+
+파라미터의 설명은 **주장 목록에서 생성된다**. 주장 하나는 `{ when, then, run, check }`이고,
+문장은 `when = then`을 이어 붙인 것이며 `mcp.test.mjs`가 `run`을 서버에 실제로 보내 `check`로
+판정한다. 지금 16건이 매 실행 돌아간다. 문장만 고칠 방법이 없다 — 고치려면 주장을 고쳐야 하고,
+거짓인 주장은 빨간불이 된다. 기본값은 도구의 `defaults`에서 생성하고, 설명에 손으로 적힌
+`default X`가 그 값과 다르면 실패한다.
 
 ## D. 프레임/노드 id — 33개
 
