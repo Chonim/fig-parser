@@ -602,27 +602,31 @@ function repeatHint(kids) {
 }
 
 /**
- * What an auto-layout row or column needs on its main axis against what it was given.
- * A designer can drag a fixed-size instance narrower than its contents; Figma neither
- * shrinks the children nor clips them unless the frame says to, so they run past the
- * edge and whatever paints later covers them. The GnbWrap header has a Button pushed
- * from its master's 124px to 74. Reporting it beats reproducing it in silence: a model
- * writing markup from this design would otherwise copy a width its own content breaks.
+ * What the contents of an auto-layout box reach on its main axis against what the box
+ * was given. A designer can drag a fixed-size instance narrower than its contents;
+ * Figma neither shrinks the children nor clips them unless the frame says to, so they
+ * run past the edge and whatever paints later covers them. The GnbWrap header has a
+ * Button pushed from its master's 124px to 74. Reporting it beats reproducing it in
+ * silence: a model writing markup from this design would otherwise copy a width its
+ * own content breaks.
+ *
+ * Measured from where the children actually sit, not by adding their sizes up. Figma
+ * lays a filling label across the whole content box with the icons drawn over its
+ * ends, so summing the row counted that label twice and called 40 sound boxes broken.
  *
  * A hugging container sizes itself to fit, so it cannot overrun.
  */
 function overrun(node, kids) {
-  const horizontal = node.stackMode === 'HORIZONTAL';
   if (node.stackPrimarySizing?.startsWith('RESIZE_TO_FIT')) return undefined;
   const flow = kids.filter((k) => k.role !== 'backdrop' && !k.flexChild?.absolute);
   if (flow.length === 0) return undefined;
-  const size = horizontal ? 'w' : 'h';
-  const pad = horizontal
-    ? round(node.stackHorizontalPadding ?? 0) + round(node.stackPaddingRight ?? node.stackHorizontalPadding ?? 0)
-    : round(node.stackVerticalPadding ?? 0) + round(node.stackPaddingBottom ?? node.stackVerticalPadding ?? 0);
-  const needs = round(
-    pad + flow.reduce((sum, k) => sum + k.box[size], 0) + round(node.stackSpacing ?? 0) * (flow.length - 1),
-  );
+  const horizontal = node.stackMode === 'HORIZONTAL';
+  const [axis, size] = horizontal ? ['x', 'w'] : ['y', 'h'];
+  const padEnd = horizontal
+    ? round(node.stackPaddingRight ?? node.stackHorizontalPadding ?? 0)
+    : round(node.stackPaddingBottom ?? node.stackVerticalPadding ?? 0);
+  const reach = Math.max(...flow.map((k) => k.box[axis] + k.box[size]));
+  const needs = round(reach + padEnd);
   const has = round((horizontal ? node.size?.x : node.size?.y) ?? 0);
   // sub-pixel slack is measurement noise, not a design that does not fit
   return needs - has > 1 ? { axis: horizontal ? 'x' : 'y', needs, has } : undefined;
@@ -922,12 +926,37 @@ function expandInstance(node, symbols) {
   // Copies of a master carry the master's ids, so three instances of one component
   // put three nodes with the same id in a frame and `select` could only answer with
   // the first. Namespacing the copy by the instance keeps them addressable.
-  const apply = (n) => ({
-    ...n,
-    ...(patches.get(guidKey(n.guid)) ?? {}),
-    id: `${node.id}/${n.id}`,
-    children: (n.children ?? []).map(apply),
-  });
+  // Figma recomputes this copy's layout and keeps the result here: each node's own
+  // size and transform after the instance was resized, plus geometry re-outlined at
+  // the new scale. Without it every child sat at the master's measurements — the
+  // GnbWrap Button dragged from 124 to 74 kept a label 40px in and 44px wide and ran
+  // off its own background.
+  //
+  // Inside one master a path is a single guid, whatever the node's depth. A longer
+  // path crosses into a nested instance and is left to that instance's own expansion.
+  // Keying by the last guid instead collides 126 times in this file, which is how the
+  // first attempt gave an untouched button a label wide enough to swallow its icons.
+  const derived = new Map();
+  for (const d of node.derivedSymbolData ?? []) {
+    if (d.guidPath.guids.length !== 1) continue;
+    // where the copy's children ended up. The recomputed geometry alongside it is a
+    // separate question, and derivedTextData is Figma's laid-out glyph run, which this
+    // layer does not read at all.
+    const fields = {};
+    if (d.size) fields.size = d.size;
+    if (d.transform) fields.transform = d.transform;
+    if (Object.keys(fields).length) derived.set(guidKey(d.guidPath.guids[0]), fields);
+  }
+  const apply = (n) => {
+    const recomputed = derived.get(guidKey(n.guid)) ?? {};
+    return {
+      ...n,
+      ...(patches.get(guidKey(n.guid)) ?? {}),
+      ...recomputed,
+      id: `${node.id}/${n.id}`,
+      children: (n.children ?? []).map(apply),
+    };
+  };
 
   // The master supplies content; everything the instance states about itself wins.
   // Listing the fields to carry over was the bug — an instance also carries its own

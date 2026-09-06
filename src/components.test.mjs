@@ -454,8 +454,11 @@ assert.ok(roomy.length > tight.length, 'every auto-layout box is being called ov
 const reach = await measureReach(SAMPLE);
 assert.deepEqual(reach.over, [], 'a response came back over the budget it is supposed to fit');
 assert.ok(reach.slack <= 3, `${reach.slack} frames cut with half the budget unspent, was 3`);
-assert.ok(reach.text >= 871, `text reached fell to ${reach.text}/${reach.textTotal}, was 871`);
-assert.ok(reach.nodes >= 2559, `nodes reached fell to ${reach.nodes}/${reach.nodeTotal}, was 2559`);
+// 871/2559 before Figma's recomputed sizes were applied: the corrected numbers are
+// slightly longer to write down, 416 bytes across 97 frames, which pushed two nodes
+// of one frame past the budget. They are still reachable with `select`.
+assert.ok(reach.text >= 869, `text reached fell to ${reach.text}/${reach.textTotal}, was 869`);
+assert.ok(reach.nodes >= 2557, `nodes reached fell to ${reach.nodes}/${reach.nodeTotal}, was 2557`);
 assert.ok(reach.truncated <= 20, `${reach.truncated} frames truncated, was 20`);
 
 // --- derivedSymbolData: what a guidPath addresses ---
@@ -489,6 +492,35 @@ assert.equal(derivedEntries, 2336, `derived entries moved to ${derivedEntries}`)
 assert.deepEqual([...pathLengths].sort(), [1, 2, 3], 'paths are no longer 1 to 3 guids long');
 assert.equal(byPathCollisions, 0, 'the full guid path is no longer a unique key inside an instance');
 assert.ok(byLastCollisions > 0, 'the last guid no longer collides — the cheap key may now be safe, re-check before using it');
+
+// --- derivedSymbolData: the sizes and transforms Figma recomputed ---
+// The GnbWrap header holds two Buttons off one 124px master: one dragged to 136 and
+// one to 74. Their children were laid out at the master's measurements, so the 74px
+// one put its label 40px in and 44px wide and ran off its own background. Figma's own
+// recomputation says 12px in and 50 wide for that copy, and 12px in and 112 wide for
+// the 136 one. An earlier attempt keyed by the last guid and gave the untouched 136
+// button a 112px label that swallowed its icons — both numbers are pinned so that
+// failure cannot come back quietly.
+const buttons = [];
+(function walk(n) {
+  if (n.name === 'BtnWrap') buttons.push(...n.children.filter((c) => c.name === 'Button'));
+  n.children?.forEach(walk);
+})(toIR(frames.find((f) => f.name === 'GnbWrap'), message.blobs, { symbols, variables }));
+assert.equal(buttons.length, 2, `expected two Buttons in BtnWrap, found ${buttons.length}`);
+const labelOf = (b) => b.children.find((c) => c.role === 'text');
+const wide = buttons.find((b) => b.box.w === 136);
+const narrow = buttons.find((b) => b.box.w === 74);
+assert.ok(wide && narrow, 'the 136 and 74 wide Buttons are no longer both there');
+assert.deepEqual(
+  { x: labelOf(wide).box.x, w: labelOf(wide).box.w },
+  { x: 12, w: 112 },
+  'the 136px Button label is not where Figma recomputed it',
+);
+assert.deepEqual(
+  { x: labelOf(narrow).box.x, w: labelOf(narrow).box.w },
+  { x: 12, w: 50 },
+  'the 74px Button label is not where Figma recomputed it',
+);
 
 console.log(`ok — reach ${reach.text}/${reach.textTotal} text, ${reach.slack} slack; ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
   `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames, ` +
