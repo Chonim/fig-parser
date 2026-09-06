@@ -330,6 +330,22 @@ assert.ok(gradients.every((g) => g.value.includes('gradient(')), 'a non-gradient
 // url(#…) points into one icon's own <defs> and means nothing as a token
 assert.ok(!archiveTokens.css.includes('url('), 'an SVG paint reference leaked into the token sheet');
 
+// The sheet is meant to be pasted. Every value has to be a value, and every font
+// needs something to fall back to — a border shorthand split on its own spaces used
+// to yield `--border-transparency: 0.2);`, and a webfont with no generic family
+// renders the whole page in the browser's default serif.
+let malformed = 0;
+let missingFallback = 0;
+for (const frame of collectFrames(roots)) {
+  const ir = toIR(frame, message.blobs);
+  if (!ir) continue;
+  const t = extractTokens(ir);
+  malformed += t.colors.filter((c) => !/^(#|rgba\(|linear-gradient|radial-gradient)/.test(c.value)).length;
+  if (t.text.length && !/sans-serif/.test(t.css)) missingFallback++;
+}
+assert.equal(malformed, 0, `${malformed} token values are not CSS values`);
+assert.equal(missingFallback, 0, `${missingFallback} frames emit a font token with no fallback`);
+
 // --- masks, blend modes, inner shadow ---
 const archiveFlat = [];
 (function walk(n) { archiveFlat.push(n); n.children?.forEach(walk); })(archiveIR);

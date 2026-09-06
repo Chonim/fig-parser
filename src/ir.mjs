@@ -892,7 +892,11 @@ export function extractTokens(ir) {
   (function walk(node) {
     if (!node) return; // a hidden frame converts to null
     if (node.style?.fill) seeColor(node.style.fill, 'surface', node.style.fillToken);
-    if (node.style?.border?.css) seeColor(node.style.border.css.split(' ').pop(), 'border', node.style.borderToken);
+    // `1px solid rgba(23, 23, 28, 0.2)` splits into eight words and the last is `0.2)`,
+    // which then reached the sheet as `--border-transparency: 0.2);`
+    if (node.style?.border?.css) {
+      seeColor(node.style.border.css.replace(/^\S+\s+\S+\s+/, ''), 'border', node.style.borderToken);
+    }
     for (const p of node.asset?.paths ?? []) seeColor(p.fill, 'icon', p.fillToken);
     if (node.text) {
       seeColor(node.text.color, 'text', node.text.colorToken);
@@ -931,7 +935,9 @@ export function extractTokens(ir) {
   const css = [
     ':root {',
     ...byUse.map((c) => `  ${c.name}: ${c.value}; /* ${c.uses.join('+')}, ${c.count}x */`),
-    ...text.map((f) => `  ${f.name}: ${f.weight} ${f.size}px${f.lineHeight ? `/${f.lineHeight}` : ''} "${f.family}";`
+    // a font shorthand naming only a webfont leaves nothing to fall back to, and a
+    // page that pastes this renders in the browser's default serif
+    ...text.map((f) => `  ${f.name}: ${f.weight} ${f.size}px${f.lineHeight ? `/${f.lineHeight}` : ''} "${f.family}", sans-serif;`
       + `${f.letterSpacing ? ` /* letter-spacing ${f.letterSpacing}, ${f.count}x */` : ` /* ${f.count}x */`}`),
     '}',
   ].join('\n');
