@@ -95,6 +95,38 @@ assert.ok(spun.some((n) => /^rotate\(-?\d/.test(n.box.transform)), 'no plain rot
 assert.ok(flat.filter((n) => n.box.transform).length === 0, 'login frame should have no transforms at all');
 assert.ok(flat.every((n) => n.bounds === undefined), 'bounds leaked onto untransformed nodes');
 
+// --- geometry-based nesting ---
+// hand-drawn files leave a button's box and its label as siblings; nesting them has
+// to be purely structural, so absolute positions must survive it untouched
+const absolute = (root) => {
+  const rows = [];
+  (function walk(n, ox, oy) {
+    const x = ox + n.box.x;
+    const y = oy + n.box.y;
+    rows.push(`${n.role} ${x.toFixed(2)} ${y.toFixed(2)} ${n.box.w} ${n.box.h}`);
+    n.children?.forEach((c) => walk(c, x, y));
+  })(root, 0, 0);
+  return rows.sort();
+};
+const archiveNested = canvas.children.find((c) => c.id === '2102:20');
+const nestedIR = toIR(archiveNested, message.blobs);
+const labelled = [];
+(function walk(n) { if (n.label) labelled.push(n); n.children?.forEach(walk); })(nestedIR);
+assert.ok(labelled.length >= 3, `expected labelled containers, found ${labelled.length}`);
+assert.ok(labelled.some((n) => n.label === 'LEARNING QUEST'), 'a nav tab was not paired with its label');
+const tab = labelled.find((n) => n.label === 'LEARNING QUEST');
+assert.ok(tab.style.fill, 'an unpainted group was treated as a container');
+assert.ok(tab.children.some((c) => c.role === 'image'), 'the tab lost its icon when it gained its label');
+// every child of a container has to sit inside it once rebased
+assert.ok(
+  tab.children.every((c) => c.box.x >= -1 && c.box.y >= -1 && c.box.x + c.box.w <= tab.box.w + 1),
+  'adopted child was not rebased into its new parent',
+);
+// a container may not adopt across something drawn between them, or z-order flips
+const bookshelf = nestedIR.children.find((c) => c.name === 'Group 4057');
+assert.ok(bookshelf, 'a shelf was adopted past an overlapping sibling, which reorders painting');
+assert.ok(absolute(nestedIR).length > 50);
+
 // --- repeated structure ---
 const withRepeat = [];
 (function walk(n) { if (n.layout?.repeat) withRepeat.push(n); n.children?.forEach(walk); })(lqIR);

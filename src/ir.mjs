@@ -363,6 +363,63 @@ function flexChild(node) {
   return Object.keys(child).length ? child : undefined;
 }
 
+/**
+ * Figma files drawn by hand leave a button's background and its label as siblings:
+ * nothing in the tree says the text belongs to the box under it. Rebuild that
+ * nesting from geometry — a painted shape adopts the later-drawn siblings it fully
+ * contains — so markup gets one element with a label instead of two loose boxes.
+ *
+ * Only painted shapes qualify as containers, only nodes drawn above them are
+ * adopted, and the smallest qualifying container wins. Positions rebase, so the
+ * rendered result is unchanged; only the tree shape is.
+ */
+function nestByContainment(kids) {
+  const encloses = (outer, inner) =>
+    inner.box.x >= outer.box.x - 1 && inner.box.y >= outer.box.y - 1
+    && inner.box.x + inner.box.w <= outer.box.x + outer.box.w + 1
+    && inner.box.y + inner.box.h <= outer.box.y + outer.box.h + 1;
+
+  const area = (n) => n.box.w * n.box.h;
+  const overlaps = (a, b) =>
+    a.box.x < b.box.x + b.box.w && b.box.x < a.box.x + a.box.w
+    && a.box.y < b.box.y + b.box.h && b.box.y < a.box.y + a.box.h;
+  const isContainer = (n) =>
+    n.role === 'frame' && !n.children?.length && (n.style?.fill || n.style?.border) && area(n) > 0;
+
+  // eligibility is decided up front: adopting one child must not stop a box from
+  // taking the next, which is how a button loses its icon after gaining its label
+  const containers = new Set(kids.filter(isContainer));
+  const adopted = new Set();
+  for (let i = 0; i < kids.length; i++) {
+    const child = kids[i];
+    if (child.role === 'backdrop' || adopted.has(child)) continue;
+    // only shapes drawn earlier can sit behind this one
+    const host = kids
+      .slice(0, i)
+      .filter((c) => containers.has(c) && !adopted.has(c) && encloses(c, child) && area(c) > area(child))
+      // adoption moves the child up in paint order; that is only safe when nothing
+      // drawn between the two overlaps it, or the sibling in between jumps on top
+      .filter((c) => !kids.slice(kids.indexOf(c) + 1, i).some((between) => overlaps(between, child)))
+      .sort((a, b) => area(a) - area(b))[0];
+    if (!host) continue;
+    host.children.push({ ...child, box: { ...child.box, x: round(child.box.x - host.box.x), y: round(child.box.y - host.box.y) } });
+    adopted.add(child);
+  }
+  return adopted.size ? kids.filter((k) => !adopted.has(k)) : kids;
+}
+
+/**
+ * A painted box holding exactly one piece of text is that text's box — a button, a
+ * tab, a chip. Naming the label saves whoever writes the markup from re-deriving it,
+ * and it reads the same whether the nesting came from auto-layout or from geometry.
+ */
+function labelOf(node) {
+  if (!node.children?.length || !(node.style?.fill || node.style?.border)) return undefined;
+  const texts = [];
+  (function walk(n) { if (n.role === 'text') texts.push(n); n.children?.forEach(walk); })(node);
+  return texts.length === 1 ? texts[0].text.content : undefined;
+}
+
 /** rough shape of a node: same role, same size, same immediate child roles */
 const signature = (n) =>
   [n.role, Math.round(n.box.w), Math.round(n.box.h), (n.children ?? []).map((c) => c.role).sort().join('.')].join('|');
@@ -654,8 +711,13 @@ export function toIR(node, blobs, options = {}) {
   const borderToken = paintVariable(node.strokePaints?.find((p) => p.visible !== false), variables);
   if (borderToken) style.borderToken = borderToken;
 
-  const kids = (node.children ?? []).filter((c) => c !== mask).map((c) => toIR(c, blobs, { isRoot: false, symbols, variables })).filter(Boolean);
-  if (isRoot) for (const k of kids) if (isBackdrop(k, node)) k.role = 'backdrop';
+  const converted = (node.children ?? []).filter((c) => c !== mask).map((c) => toIR(c, blobs, { isRoot: false, symbols, variables })).filter(Boolean);
+  if (isRoot) for (const k of converted) if (isBackdrop(k, node)) k.role = 'backdrop';
+  const kids = nestByContainment(converted);
+  for (const k of kids) {
+    const label = labelOf(k);
+    if (label) k.label = label;
+  }
 
   if (image && !kids.length) {
     return { ...base, role: 'image', asset: { kind: 'image', ...image }, style, children: [] };
