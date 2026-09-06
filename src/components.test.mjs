@@ -605,6 +605,38 @@ for (const frame of frames) {
 assert.ok(centred >= 110, `centred strokes fell to ${centred}, was 110 — recount before trusting the decision to skip them`);
 assert.deepEqual([...centredWeights], ['1'], 'a centred stroke is no longer 1px, so the half-pixel argument no longer holds');
 
+// --- derivedSymbolData across an instance boundary ---
+// 555 of the 2336 entries have a path of more than one guid: the first names a nested
+// instance inside this master and the rest addresses a node inside that instance's own
+// master. All 555 resolve that way. Left unread, a node one level down keeps the
+// master's measurements even where Figma recomputed them — Description Row is 240×16
+// in its master and 240×18 in this copy.
+const nestedFrame = frames.find((f) => f.id === '2399:1517');
+const nestedIR = toIR(nestedFrame, message.blobs, { symbols, variables });
+let nested = null;
+(function walk(n) {
+  if (n.id === '2390:797/43:915/43:572') nested = n;
+  n.children?.forEach(walk);
+})(nestedIR);
+assert.ok(nested, 'the nested Description Row is no longer at that id');
+assert.equal(nested.box.h, 18, `the nested row is ${nested.box.h} tall, not the 18 Figma recomputed`);
+
+let multiGuid = 0, resolves = 0;
+for (const node of message.nodeChanges) {
+  if (!node.symbolData) continue;
+  const master = symbols.get(`${node.symbolData.symbolID.sessionID}:${node.symbolData.symbolID.localID}`);
+  for (const e of node.derivedSymbolData ?? []) {
+    if (e.guidPath.guids.length < 2) continue;
+    multiGuid += 1;
+    const first = derivedKey(e.guidPath.guids[0]);
+    let hop = null;
+    (function find(m) { if (!m || hop) return; if (derivedKey(m.guid) === first) hop = m; (m.children ?? []).forEach(find); })(master);
+    if (hop?.type === 'INSTANCE' && hop.symbolData) resolves += 1;
+  }
+}
+assert.equal(multiGuid, 555, `multi-guid entries moved to ${multiGuid}`);
+assert.equal(resolves, multiGuid, `${multiGuid - resolves} paths do not start at a nested instance`);
+
 console.log(`ok — reach ${reach.text}/${reach.textTotal} text, ${reach.slack} slack; ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
   `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames, ` +
   `${authored.length} tokens named from variables, ${catalogue.variables.length} variables in ${catalogue.sets.length} sets`);
