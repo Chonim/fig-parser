@@ -398,7 +398,20 @@ function collectPaths(node, blobs, parent, out, defs, variables) {
       paintVariable(visiblePaint(node.strokePaints), variables)],
   ];
 
-  for (const [list, fill, token] of geometries) {
+  // A boolean operation that carries a stroke does not paint its fill. Figma's own
+  // export of the My Item panel and of the selected LEARNING QUEST tab shows a border
+  // with the background straight through it, while the file gives both nodes an opaque
+  // gradient and a `fillGeometry` covering the whole shape. Nothing readable on the node
+  // distinguishes them from a boolean whose fill does paint — the only field that
+  // separates the two groups in this file is the stroke, and dropping the fill on that
+  // test takes the 12 frames from 658,802 to 540,001 differing pixels with no frame
+  // getting worse. Dropping every boolean's fill instead is worse (560,940: `main`'s
+  // filled unions go hollow), so the stroke is doing real work here even though the
+  // reason it should is not established. The IR still reports the paint; this is the
+  // render declining to draw it.
+  const outlineOnly = node.type === 'BOOLEAN_OPERATION' && node.strokePaints?.some((p) => p.visible !== false);
+  for (const [i, [list, fill, token]] of geometries.entries()) {
+    if (outlineOnly && i === 0) continue;
     if (fill === 'none') continue;
     for (const geom of list ?? []) {
       const blob = blobs[geom.commandsBlob];

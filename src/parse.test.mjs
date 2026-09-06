@@ -155,11 +155,15 @@ const panel = (function find(n) {
   return null;
 })(toIR(myItem, message.blobs));
 assert.ok(panel, 'the My Item panel is no longer a Union of that size');
+// It draws one path, not three: the operands are not drawn, and neither is the union's
+// own fill — Figma's export shows this panel as a white outline with the room straight
+// through it, though the file gives it an opaque gradient over the whole shape.
 assert.equal(
   panel.asset.paths.length,
-  2,
-  `the panel draws ${panel.asset.paths.length} paths: its own fill and stroke, plus the operands underneath`,
+  1,
+  `the panel draws ${panel.asset.paths.length} paths; it is an outline, so only the stroke is one`,
 );
+assert.equal(panel.asset.paths[0].fill, '#ffffff', 'the one path the panel draws is not its white stroke');
 // The skip is guarded on the boolean having geometry of its own, and every one in
 // these files does — so nothing here can tell the guard from an unconditional skip.
 // Asserting the premise is what makes the guard's necessity visible: a file whose

@@ -188,8 +188,9 @@ longer string grows the box rather than spilling out of it.
 Every other check here agrees with the render it is looking at; only `pnpm diff` can say the
 render is wrong, by comparing it to Figma's own export. `REFS.md` says how to get those images
 in — one page-wide PNG through `pnpm refs:slice` is enough. kyowon-full's 12 frames are covered,
-and `TASKS.md` has what that comparison found: one full screen matches to 0.146%, and the frames
-that do not are each wrong in one identified place.
+and `TASKS.md` has what that comparison found: one full screen matches to 0.146%, the frames that
+do not were each wrong in one identified place, and fixing two of those took the twelve frames
+from 719,774 differing pixels to 540,001.
 
 Run `pnpm census <file.fig>` against your own file to see what this drops on it. Rows marked
 `deliberate` are accounted for — duplicate vector-network blobs, invisible nodes, and variables

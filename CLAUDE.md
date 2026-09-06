@@ -122,7 +122,14 @@ These are pinned by tests. A red suite is usually one of these, not new code.
     kept a label 40px in and 44px wide, and ran off its own background. Inside one master a path
     is a single guid whatever the node's depth; a longer path crosses into a nested instance and
     belongs to that instance's own expansion. Keying by the last guid collides 126 times here.
-12. **Figma calling a frame auto-layout does not make it a flex row.** Where the children it
+12. **A boolean operation with a stroke does not paint its fill.** Figma's export shows the My
+    Item panel and the selected LEARNING QUEST tab as a border with the background straight
+    through, while the file gives both an opaque gradient over the whole shape. Nothing
+    readable separates them from a boolean whose fill does paint; the stroke is the only field
+    that splits the two groups here, and cutting on it takes the 12 frames from 658,802 to
+    540,001 differing pixels with none getting worse — dropping every boolean's fill is worse.
+    The reason is not established, which is why `pnpm diff` is the thing that pins it.
+13. **Figma calling a frame auto-layout does not make it a flex row.** Where the children it
     recomputed overlap on the main axis — a filling label with icons drawn over its ends — flex
     would push them apart. The stack settings stay reported; the placement falls back to the
     coordinates. 32 boxes in the design-system file.
