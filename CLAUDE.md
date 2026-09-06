@@ -87,6 +87,10 @@ These are pinned by tests. A red suite is usually one of these, not new code.
 8. **A hint that reports indices says which array they index.** `layout.rows` addresses the
    node's own `children`; two callers passing differently-filtered arrays made every index name
    the wrong node.
+9. **A group is a `FRAME` carrying `resizeToFit`.** There is no `GROUP` type in the format, so a
+   test on `node.type` alone treats all 521 of one file's groups as frames. Groups size themselves
+   to their contents instead of cropping them: clipping them cut every OUTSIDE stroke, glow and
+   shadow at the child's own edge — the tool buttons lost the right side of their white ring.
 
 ## Working rules
 

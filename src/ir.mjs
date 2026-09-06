@@ -15,8 +15,11 @@ import { decodePathBlob, pathToSvg, hashHex } from './parse.mjs';
  * }
  */
 
-// GROUP has no box of its own to clip against; only real containers do
+// GROUP has no box of its own to clip against; only real containers do. The format
+// has no GROUP type to test for — a group is a FRAME carrying resizeToFit, sized to
+// its contents rather than cropping them, so that flag is what tells the two apart.
 const CLIPPING_TYPES = new Set(['FRAME', 'SYMBOL', 'INSTANCE']);
+const isGroup = (node) => node.resizeToFit === true;
 
 const VECTOR_TYPES = new Set(['VECTOR', 'BOOLEAN_OPERATION', 'LINE', 'STAR', 'REGULAR_POLYGON']);
 
@@ -989,7 +992,7 @@ export function toIR(node, blobs, options = {}) {
     blend: blendOf(node),
     // Figma's "clip content" is this flag inverted, and it decides whether a child
     // that sticks out is drawn or cut. Only frames clip; a group never does.
-    clip: mask || (CLIPPING_TYPES.has(node.type) && node.frameMaskDisabled !== true) ? true : undefined,
+    clip: mask || (CLIPPING_TYPES.has(node.type) && !isGroup(node) && node.frameMaskDisabled !== true) ? true : undefined,
     opacity: node.opacity ?? 1,
   };
   const fillToken = paintVariable(visibleFill(node), variables);

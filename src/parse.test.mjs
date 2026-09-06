@@ -362,6 +362,29 @@ for (const frame of collectFrames(roots)) {
 }
 assert.ok(rowNodes > 20, `expected many banded nodes, got ${rowNodes}`);
 
+// --- a group is not a frame, and does not clip ---
+// A Figma GROUP is stored as a FRAME carrying resizeToFit, and it sizes itself to its
+// contents rather than cropping them. Clipping one cuts off everything a child paints
+// outside its own box: the My Page tool buttons are a circle with a 3px OUTSIDE white
+// stroke, wrapped in a group exactly the circle's size, and the ring lost its right
+// edge to the group's overflow.
+const myPage = collectFrames(roots).find((f) => f.name === '온라인학습_My Page');
+const myPageIR = toIR(myPage, message.blobs);
+const ringAncestors = [];
+assert.ok(
+  (function find(n, chain) {
+    if (n.name === 'Ellipse 56') { ringAncestors.push(...chain); return true; }
+    return (n.children ?? []).some((c) => find(c, [...chain, n]));
+  })(myPageIR, []),
+  'the ringed tool button is gone — pick another case',
+);
+const clippingGroups = ringAncestors.filter((n) => n.style?.clip && /^Group /.test(n.name));
+assert.equal(
+  clippingGroups.map((n) => n.name).join(', '),
+  '',
+  'a group clipped its children, cropping whatever they paint outside their own box',
+);
+
 // --- gradients are tokens too ---
 const archiveTokens = extractTokens(nestedIR);
 const gradients = archiveTokens.colors.filter((c) => c.name.startsWith('--gradient'));
@@ -405,6 +428,7 @@ assert.match(renderHTML(archiveIR), /overflow: hidden/, 'clip never reached the 
 // box of its own — and a frame that has clipping turned off must not.
 let clipping = 0;
 let wrongly = 0;
+let groupsClipping = 0;
 for (const frame of collectFrames(roots)) {
   const raw = new Map();
   (function walk(n) { raw.set(n.id, n); n.children?.forEach(walk); })(frame);
@@ -413,12 +437,18 @@ for (const frame of collectFrames(roots)) {
     if (n.style?.clip) {
       clipping++;
       if (source && source.frameMaskDisabled === true) wrongly++;
+      // a group holding a folded mask clips for that reason, not for being a container
+      const folded = (source?.children ?? []).some((c) => c.mask && c.visible !== false);
+      if (source && source.resizeToFit === true && !folded) groupsClipping++;
     }
     n.children?.forEach(walk);
   })(toIR(frame, message.blobs) ?? { children: [] });
 }
-assert.ok(clipping > 100, `only ${clipping} containers clip their contents`);
+// this file is 13 frames and 521 groups, so a count in the hundreds means the groups
+// are being clipped too — which is what it used to say before groups were told apart
+assert.ok(clipping > 10 && clipping < 40, `${clipping} containers clip their contents`);
 assert.equal(wrongly, 0, `${wrongly} containers clip although the design says not to`);
+assert.equal(groupsClipping, 0, `${groupsClipping} groups clip, and a group has no box of its own to clip against`);
 
 const blended = flat.find((n) => n.style?.blend);
 assert.equal(blended?.style.blend, 'darken', 'blend mode dropped');
