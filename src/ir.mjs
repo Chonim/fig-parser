@@ -377,20 +377,33 @@ function rowBands(children) {
   // Indices are the contract with whoever reads this, and they read `children`.
   // Filtering before indexing is what let one caller mean a different array than
   // the other, so the mapping is built here, from the array the consumer holds.
-  const flow = children
-    .map((node, index) => ({ node, index, box: node.bounds ?? node.box }))
-    .filter(({ node, box }) => node.role !== 'backdrop' && box.h > 0);
+  const boxed = children.map((node, index) => ({ node, index, box: node.bounds ?? node.box }));
+  // A child that vertically spans other children is the surface they sit on, not a
+  // cell beside them. Without this a full-height panel joins whichever row overlaps
+  // its middle and reads as one nine-item row.
+  const spans = (a, b) => a !== b && a.box.y <= b.box.y && a.box.y + a.box.h >= b.box.y + b.box.h && a.box.h > b.box.h;
+  // "most of them", not "any of them" — a table cell is taller than the button beside
+  // it and would otherwise disqualify itself from its own row.
+  const isSurface = (c) => boxed.filter((other) => spans(c, other)).length > boxed.length * 0.5;
+  const listable = boxed.filter((c) => c.node.role !== 'backdrop' && c.box.h > 0);
+  const surfaces = listable.filter(isSurface);
+  const flow = listable.filter((c) => !surfaces.includes(c));
   if (flow.length < 4) return undefined;
 
   const bands = [];
   for (const k of [...flow].sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x)) {
     const band = bands.at(-1);
-    const shared = band && Math.min(band.bottom, k.box.y + k.box.h) - Math.max(band.top, k.box.y);
-    // a cell joins the row it mostly sits in, so a tall element cannot swallow the page
-    if (band && shared > Math.min(band.bottom - band.top, k.box.h) * 0.5) {
+    // The band carries the interval its members all share, and that interval only
+    // ever shrinks. Growing it let one tall element pull in everything below, and a
+    // six-deep list came back as a single row; keeping the first item's range
+    // instead still admitted a short item at the top and another at the bottom of a
+    // tall one, which share nothing.
+    const top = band && Math.max(band.top, k.box.y);
+    const bottom = band && Math.min(band.bottom, k.box.y + k.box.h);
+    if (band && bottom - top > Math.min(band.bottom - band.top, k.box.h) * 0.5) {
       band.items.push(k);
-      band.top = Math.min(band.top, k.box.y);
-      band.bottom = Math.max(band.bottom, k.box.y + k.box.h);
+      band.top = top;
+      band.bottom = bottom;
     } else {
       bands.push({ top: k.box.y, bottom: k.box.y + k.box.h, items: [k] });
     }
@@ -401,7 +414,11 @@ function rowBands(children) {
   const shuffled = flow.some((k, i) => i > 0 && k.box.y < flow[i - 1].box.y - 1);
   if (bands.length < 2 || (!bands.some((b) => b.items.length > 1) && !shuffled)) return undefined;
 
-  return bands.map((b) => b.items.sort((x, y) => x.box.x - y.box.x).map((k) => k.index).join(' '));
+  // surfaces stay in the listing, each as its own row, so nothing goes unaccounted
+  // for and no cell row is contaminated by the panel it sits on
+  const all = [...bands, ...surfaces.map((s) => ({ top: s.box.y, items: [s] }))]
+    .sort((a, b) => a.top - b.top);
+  return all.map((b) => b.items.sort((x, y) => x.box.x - y.box.x).map((k) => k.index).join(' '));
 }
 
 /**

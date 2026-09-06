@@ -262,6 +262,12 @@ for (const frame of canvas.children.filter((c) => c.type === 'FRAME')) {
           listed.add(Number(i));
           return child.bounds ?? child.box;
         });
+        // a band is one shared vertical interval, not a chain of pairwise overlaps
+        if (items.length > 1) {
+          const top = Math.max(...items.map((b) => b.y));
+          const bottom = Math.min(...items.map((b) => b.y + b.h));
+          assert.ok(top < bottom, `${n.name}: row members share no vertical interval`);
+        }
         const xs = items.map((b) => b.x);
         assert.deepEqual(xs, [...xs].sort((a, b) => a - b), `${n.name}: row is not left to right`);
       }
