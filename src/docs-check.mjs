@@ -20,6 +20,7 @@ import { parseFigFile, buildTree, collectFrames } from './parse.mjs';
 import { toIR, symbolIndex, variableIndex } from './ir.mjs';
 import { measureReach } from './reach.mjs';
 import { PRODUCT, LIBRARY, BOTH, requireSamples } from './samples.mjs';
+import { TOOLS } from './mcp.mjs';
 
 const DOCS = ['README.md', 'CLAUDE.md', 'TASKS.md', 'REFS.md', 'CLAIMS.md'];
 
@@ -112,6 +113,7 @@ export async function measure() {
     'login.ir': per.login.ir,
     'login.logo.paths': per.login.logoPaths,
     'deps.runtime': Object.keys(pkg.dependencies).length,
+    'tools.count': TOOLS.length,
     'dogfood.drilling': Number(drilling[1]),
     'dogfood.searching': Number(searching[1]),
   };

@@ -7,6 +7,7 @@ import { resolve, relative, join, isAbsolute, dirname } from 'node:path';
 import { parseFigFile, buildTree, collectFrames } from './parse.mjs';
 import { toIR, extractTokens, symbolIndex, variableIndex, readVariables } from './ir.mjs';
 import { renderHTML } from './html.mjs';
+import { PRODUCT, LIBRARY } from './samples.mjs';
 
 const ROOT = resolve(process.env.FIG_ROOT ?? process.cwd());
 
@@ -312,12 +313,16 @@ const wrap = (fn) => async (args) => {
 /**
  * A parameter's description is the only manual a model gets, and nothing used to read
  * it: get_frame's said `depth: 1 = this node only` while it returned the node with its
- * children as stubs. So a claim is data — a case, what it does, and a call that shows
- * it — the sentence is generated from the cases, and mcp.test.mjs runs them. Editing
- * the sentence means editing a case, and a case that lies fails.
+ * children as stubs. So a claim is data — a case, a call, and `then`, which is both the
+ * words in the description and the answer the call has to produce.
+ *
+ * `then` is a function of what came back, not a boolean check of it. Returning a
+ * sentence rather than true/false is what binds the two: mcp.test.mjs compares the
+ * sentence the call produces with the sentence in the description, so rewording the
+ * description without changing the behaviour fails just as loudly as the reverse.
  */
 const claim = (schema, lead, cases = [], tail) => {
-  const spelled = cases.map((c) => `${c.when} = ${c.then}`).join('; ');
+  const spelled = cases.map((c) => `${c.when} = ${c.says}`).join('; ');
   const out = schema.describe([lead, spelled, tail].filter(Boolean).join(spelled ? '; ' : ''));
   out.claims = cases;
   return out;
@@ -327,7 +332,8 @@ const claim = (schema, lead, cases = [], tail) => {
 const FIND_DEFAULTS = { field: 'both', limit: 40 };
 const HTML_DEFAULTS = { assetDir: 'assets' };
 const LOGIN = '2063:280';
-const SAMPLE = 'samples/kyowon-full.fig';
+const SAMPLE = PRODUCT;
+const LIBRARY_SAMPLE = LIBRARY;
 const isStub = (c) => typeof c === 'object' && c !== null && !('style' in c) && !('layout' in c);
 
 // shared, and deliberately claim-free: a claim is a call, and the same call cannot be
@@ -380,29 +386,37 @@ tool(
       'Large frames come back truncated; the placeholder text names the id to pass back as `select` to go deeper.',
     inputSchema: {
       file: claim(z.string(), '.fig file path, relative to FIG_ROOT', [
-        { when: 'a path that climbs out of FIG_ROOT', then: 'refused',
-          run: { file: '../../../etc/passwd', frame: LOGIN }, check: (v) => Boolean(v.error) },
+        { when: 'a path that climbs out of FIG_ROOT', says: 'refused',
+          run: { file: '../../../etc/passwd', frame: LOGIN }, then: (v) => (v.error ? 'refused' : 'answered') },
       ]),
       frame: claim(z.string(), 'frame name or id from list_frames', [
-        { when: 'an id', then: 'that frame', run: { file: SAMPLE, frame: LOGIN }, check: (v) => v.id === LOGIN },
-        { when: 'a name', then: 'the same frame', run: { file: SAMPLE, frame: '온라인학습_Login' }, check: (v) => v.id === LOGIN },
+        { when: 'an id', says: 'that frame', run: { file: SAMPLE, frame: LOGIN },
+          then: (v) => (v.id === LOGIN ? 'that frame' : `${v.id}`) },
+        { when: 'a name', says: 'the same frame', run: { file: SAMPLE, frame: '온라인학습_Login' },
+          then: (v) => (v.id === LOGIN ? 'the same frame' : `${v.id}`) },
       ]),
       select: claim(z.string(), 'id or name of a node to return instead of the whole frame', [
-        { when: 'the id of a node inside the frame', then: 'that node, as the root of the answer',
-          run: { file: SAMPLE, frame: LOGIN, select: '2063:289' }, check: (v) => v.id === '2063:289' },
+        { when: 'the id of a node inside the frame', says: 'that node, as the root of the answer',
+          run: { file: SAMPLE, frame: LOGIN, select: '2063:289' },
+          then: (v) => (v.id === '2063:289' ? 'that node, as the root of the answer' : `the frame (${v.id})`) },
       ]).optional(),
       depth: claim(z.number().int().min(1), 'levels of nesting to describe', [
-        { when: '1', then: 'this node with its children listed as stubs',
+        { when: '1', says: 'this node with its children listed as stubs',
           run: { file: SAMPLE, frame: LOGIN, depth: 1 },
-          check: (v) => Array.isArray(v.children) && v.children.length > 0 && v.children.every(isStub) },
+          then: (v) => {
+            const kids = Array.isArray(v.children) ? v.children : [];
+            if (!kids.length) return 'this node and nothing else';
+            return kids.every(isStub) ? 'this node with its children listed as stubs' : 'this node and its children in full';
+          } },
       ], 'omit for as deep as the budget allows').optional(),
       includePaths: claim(z.boolean(), 'inline raw SVG path data (large; usually you want export_assets instead)', [
-        { when: 'true on a node whose paths fit the budget', then: 'every bezier of it',
+        { when: 'true on a node whose paths fit the budget', says: 'every bezier of it',
           run: { file: SAMPLE, frame: LOGIN, select: '2063:301', includePaths: true },
-          check: (v, body) => body.includes('"d":') },
-        { when: 'true where they do not fit', then: 'the usual cut answer, saying what it could not send',
+          then: (v, body) => (body.includes('"d":') ? 'every bezier of it' : 'the summary again') },
+        { when: 'true where they do not fit', says: 'the usual cut answer, saying what it could not send',
           run: { file: SAMPLE, frame: LOGIN, includePaths: true },
-          check: (v, body) => body.length <= BUDGET && Boolean(v.truncated) },
+          then: (v, body) => (body.length > BUDGET ? 'all of it, over budget'
+            : v.truncated ? 'the usual cut answer, saying what it could not send' : 'a cut answer that says nothing') },
       ]).optional(),
     },
   },
@@ -436,29 +450,33 @@ tool(
     inputSchema: {
       file,
       query: claim(z.string(), 'substring to look for, case-insensitive', [
-        { when: 'a string the design contains', then: 'the nodes carrying it, with the id to select and the ancestors that lead there',
+        { when: 'a string the design contains', says: 'the nodes carrying it, with the id to select and the ancestors that lead there',
           run: { file: SAMPLE, query: '로그인' },
-          check: (v) => v.matches.length > 0 && v.matches.every((m) => m.id && Array.isArray(m.path)) },
-        { when: 'different casing', then: 'the same matches',
-          run: { file: SAMPLE, query: 'RECTANGLE', field: 'name' }, check: (v) => v.matches.length > 0 },
+          then: (v) => (v.matches.length && v.matches.every((m) => m.id && Array.isArray(m.path))
+            ? 'the nodes carrying it, with the id to select and the ancestors that lead there'
+            : v.matches.length ? 'matches without an id or a path' : 'nothing') },
+        { when: 'different casing', says: 'the same matches',
+          run: { file: SAMPLE, query: 'RECTANGLE', field: 'name' },
+          then: (v) => (v.matches.length ? 'the same matches' : 'nothing') },
       ]),
       frame: claim(z.string(), 'one frame', [
-        { when: 'given', then: 'only that frame is searched',
+        { when: 'given', says: 'only that frame is searched',
           run: { file: SAMPLE, query: 'Rectangle', field: 'name', frame: LOGIN },
-          check: (v) => v.matches.every((m) => m.frame === LOGIN) },
+          then: (v) => (v.matches.every((m) => m.frame === LOGIN) ? 'only that frame is searched' : 'the whole file is searched') },
       ], 'omit to search the whole file').optional(),
       field: claim(z.enum(['text', 'name', 'both']), 'what to match against', [
-        { when: "'name'", then: 'layer names only, never the text in the design',
+        { when: "'name'", says: 'layer names only, never the text in the design',
           run: { file: SAMPLE, query: '로그인', field: 'name' },
-          check: (v) => v.matches.every((m) => m.name.includes('로그인')) },
+          then: (v) => (v.matches.every((m) => m.name.includes('로그인'))
+            ? 'layer names only, never the text in the design' : 'text as well') },
       ], `default ${FIND_DEFAULTS.field}`).optional(),
       limit: claim(z.number().int().positive(), 'most matches to return', [
-        { when: 'a number', then: 'at most that many, with the rest counted as truncated',
+        { when: 'a number', says: 'at most that many, with the rest counted as truncated',
           run: { file: SAMPLE, query: 'e', limit: 3 },
-          check: (v) => v.matches.length <= 3 && v.truncated > 0 },
-        { when: 'omitted', then: `${FIND_DEFAULTS.limit}`,
-          run: { file: SAMPLE, query: 'e' },
-          check: (v) => v.matches.length === FIND_DEFAULTS.limit && v.truncated > 0 },
+          then: (v) => (v.matches.length <= 3 && v.truncated > 0
+            ? 'at most that many, with the rest counted as truncated' : `${v.matches.length} of them`) },
+        { when: 'omitted', says: `${FIND_DEFAULTS.limit}`,
+          run: { file: SAMPLE, query: 'e' }, then: (v) => `${v.matches.length}` },
       ], `default ${FIND_DEFAULTS.limit}`).optional(),
     },
   },
@@ -511,12 +529,13 @@ tool(
       file,
       frame,
       assetDir: claim(z.string(), 'href prefix for images', [
-        { when: 'a prefix', then: 'every image src starts with it',
+        { when: 'a prefix', says: 'every image src starts with it',
           run: { file: SAMPLE, frame: LOGIN, assetDir: 'img' },
-          check: (v, body) => body.includes('src="img/') && !body.includes('src="assets/') },
-        { when: 'omitted', then: HTML_DEFAULTS.assetDir,
+          then: (v, body) => (body.includes('src="img/') && !body.includes('src="assets/')
+            ? 'every image src starts with it' : 'some src does not') },
+        { when: 'omitted', says: HTML_DEFAULTS.assetDir,
           run: { file: SAMPLE, frame: LOGIN },
-          check: (v, body) => body.includes(`src="${HTML_DEFAULTS.assetDir}/`) },
+          then: (v, body) => (body.match(/src="([^/"]+)\//)?.[1] ?? 'no images') },
       ], `default ${HTML_DEFAULTS.assetDir}`).optional(),
     },
   },
@@ -535,9 +554,10 @@ tool(
       file,
       frame,
       outDir: claim(z.string(), 'output directory, relative to FIG_ROOT', [
-        { when: 'a directory', then: 'a file per asset, keyed by hash, each saying which nodes wanted it',
+        { when: 'a directory', says: 'a file per asset, keyed by hash, each saying which nodes wanted it',
           run: { file: SAMPLE, frame: LOGIN, outDir: 'out/claim-check' },
-          check: (v) => Object.values(v).every((a) => a.file?.startsWith('out/claim-check/') && Array.isArray(a.usedBy)) },
+          then: (v) => (Object.values(v).every((a) => a.file?.startsWith('out/claim-check/') && Array.isArray(a.usedBy))
+            ? 'a file per asset, keyed by hash, each saying which nodes wanted it' : 'something else') },
       ]),
     },
   },
@@ -590,14 +610,16 @@ tool(
     inputSchema: {
       file,
       set: claim(z.string(), 'only variables from this set (substring, case-insensitive)', [
-        { when: 'a set name', then: 'nothing from any other set',
-          run: { file: 'samples/matsq.fig', set: 'color' },
-          check: (v) => v.variables.length > 0 && v.variables.every((x) => /color/i.test(x.set)) },
+        { when: 'a set name', says: 'nothing from any other set',
+          run: { file: LIBRARY_SAMPLE, set: 'color' },
+          then: (v) => (v.variables.length > 0 && v.variables.every((x) => /color/i.test(x.set))
+            ? 'nothing from any other set' : 'variables from elsewhere too') },
       ]).optional(),
       frame: claim(z.string(), 'only variables this frame actually binds', [
-        { when: 'a frame', then: 'fewer than the whole file declares',
-          run: { file: 'samples/matsq.fig', frame: '43:783' },
-          check: (v) => v.variables.length > 0 && v.variables.length < 581 },
+        { when: 'a frame', says: 'fewer than the whole file declares',
+          run: { file: LIBRARY_SAMPLE, frame: '43:783' },
+          then: (v) => (v.variables.length > 0 && v.variables.length < 581
+            ? 'fewer than the whole file declares' : `${v.variables.length}`) },
       ]).optional(),
     },
   },
@@ -663,9 +685,9 @@ tool(
     inputSchema: {
       file,
       frame: claim(z.string(), 'one frame', [
-        { when: 'given', then: 'only what that frame uses',
+        { when: 'given', says: 'only what that frame uses',
           run: { file: SAMPLE, frame: LOGIN },
-          check: (v) => v.colors.length > 0 && v.colors.length < 40 },
+          then: (v) => (v.colors.length > 0 && v.colors.length < 40 ? 'only what that frame uses' : `${v.colors.length} colours`) },
       ], 'omit for the whole file').optional(),
     },
   },

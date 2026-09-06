@@ -90,7 +90,7 @@ shows up as a number rather than as quietly less of the design arriving.
 
 ### What each tool takes
 
-Every tool takes `file`, a path under `FIG_ROOT`. Beyond that:
+Seven tools <!-- fig:tools.count=7 -->, each taking `file`, a path under `FIG_ROOT`. Beyond that:
 
 | Tool | Parameters |
 | --- | --- |

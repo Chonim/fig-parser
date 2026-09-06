@@ -49,7 +49,8 @@ send({ jsonrpc: '2.0', method: 'notifications/initialized' });
 // source; this reads them.
 const tools = (await rpc('tools/list')).tools.map((t) => t.name);
 assert.deepEqual(tools.sort(), TOOLS.map((t) => t.name).sort(), 'the server exposes something other than the defined tools');
-assert.equal(TOOLS.length, 7, `${TOOLS.length} tools defined — the README says 7`);
+// how many there are is the README's business, checked by src/docs.test.mjs against
+// this same array — writing the number here too is the duplication this item removed
 
 // this sample barely uses variables; the catalogue still has to come back well-formed
 const vars = json(await call('get_variables', { file: SAMPLE }));
@@ -301,7 +302,11 @@ for (const c of claims) {
   const res = await call(c.tool, c.run);
   const body = res.content[0].text;
   const value = res.isError ? { error: body } : (() => { try { return JSON.parse(body); } catch { return body; } })();
-  assert.ok(c.check(value, body), `${c.tool}.${c.param} — "${c.when} = ${c.then}" is not what it does`);
+  assert.equal(
+    c.then(value, body),
+    c.says,
+    `${c.tool}.${c.param} — the description says "${c.when} = ${c.says}"`,
+  );
 }
 
 proc.kill();
