@@ -4,9 +4,15 @@ import { existsSync } from 'node:fs';
 
 const SAMPLE = 'samples/kyowon-full.fig';
 const FRAME = '온라인학습_Login';
+// the other sample is the only one with components and variables, and mcp.mjs
+// builds both indexes itself — nothing else here would notice if it built them
+// from the wrong thing, or dropped one entirely
+const LIBRARY = 'samples/matsq.fig';
 if (!existsSync(SAMPLE)) {
+  // A skip and a pass are indistinguishable to anything reading the exit code, so
+  // on CI an absent sample is a failure rather than a quiet green run.
   console.log(`skip — ${SAMPLE} not present`);
-  process.exit(0);
+  process.exit(process.env.CI ? 1 : 0);
 }
 
 const proc = spawn('node', ['src/mcp.mjs'], { stdio: ['pipe', 'pipe', 'inherit'] });
@@ -102,6 +108,37 @@ assert.ok(drilled.children.length > 0, 'drilled subtree came back empty');
 
 const html = (await call('get_html', { file: SAMPLE, frame: FRAME })).content[0].text;
 assert.ok(html.startsWith('<!doctype html>') && html.includes('로그인'));
+
+// --- the server's own indexes, which only the design-system file exercises ---
+if (existsSync(LIBRARY)) {
+  const libFrames = json(await call('list_frames', { file: LIBRARY }));
+  assert.ok(libFrames.length > 90, `sections not traversed through the server: ${libFrames.length} frames`);
+
+  const tag = libFrames.find((f) => f.name === 'Tag-solid');
+  const tagIR = json(await call('get_frame', { file: LIBRARY, frame: tag.id }));
+  const flatten = (root) => {
+    const out = [];
+    (function walk(n) { out.push(n); if (Array.isArray(n.children)) n.children.forEach(walk); })(root);
+    return out;
+  };
+  // truncation currently reduces deep nodes to id/name/role/box, dropping `component`
+  // along with everything else, so ask for a subtree that comes back whole. That
+  // isolates what this is testing — how the server builds its indexes — from P2-1.
+  const branch = tagIR.children.find((c) => Array.isArray(c.children) && c.children.length);
+  const subtree = json(await call('get_frame', { file: LIBRARY, frame: tag.id, select: branch.id }));
+
+  // symbolIndex built from the wrong source expands every instance to an empty shell
+  const components = flatten(subtree).filter((n) => n.component);
+  assert.ok(components.length >= 2, `instances did not expand through the server: ${components.length}`);
+  assert.ok(components.some((n) => n.asset?.pathCount > 0 || n.children?.length), 'expanded instance has no content');
+
+  // variables dropped on the way in means invented token names instead of authored ones
+  const tokens = json(await call('get_tokens', { file: LIBRARY, frame: tag.id }));
+  assert.ok(tokens.colors.some((c) => c.authored), 'no colour reached the server with its authored name');
+
+  const vars = json(await call('get_variables', { file: LIBRARY }));
+  assert.ok(vars.variables.length > 500, `variable catalogue did not load: ${vars.variables.length}`);
+}
 
 const escaped = await call('get_frame', { file: '../../../etc/hosts', frame: 'x' });
 assert.equal(escaped.isError, true);

@@ -8,8 +8,10 @@ import { renderHTML } from './html.mjs';
 // a design-system file to be checked against at all.
 const SAMPLE = 'samples/matsq.fig';
 if (!existsSync(SAMPLE)) {
+  // A skip and a pass are indistinguishable to anything reading the exit code, so
+  // on CI an absent sample is a failure rather than a quiet green run.
   console.log(`skip — ${SAMPLE} not present`);
-  process.exit(0);
+  process.exit(process.env.CI ? 1 : 0);
 }
 
 const { message } = parseFigFile(SAMPLE);

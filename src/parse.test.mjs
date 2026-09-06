@@ -6,8 +6,10 @@ import { renderHTML } from './html.mjs';
 
 const SAMPLE = 'samples/kyowon-full.fig';
 if (!existsSync(SAMPLE)) {
+  // A skip and a pass are indistinguishable to anything reading the exit code, so
+  // on CI an absent sample is a failure rather than a quiet green run.
   console.log(`skip — ${SAMPLE} not present`);
-  process.exit(0);
+  process.exit(process.env.CI ? 1 : 0);
 }
 
 const { version, message } = parseFigFile(SAMPLE);
