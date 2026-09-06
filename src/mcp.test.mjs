@@ -56,7 +56,9 @@ const icons = [];
 assert.ok(icons.every((i) => i.asset.pathCount > 0 && !i.asset.paths), 'svg path data leaked into the model IR');
 
 const shallow = json(await call('get_frame', { file: SAMPLE, frame: FRAME, depth: 1 }));
-assert.ok(shallow.children.some((c) => typeof c === 'string' && c.includes('children')), 'depth cutoff not applied');
+// at the cut, children survive as stubs carrying an id to drill into
+assert.ok(shallow.children.every((c) => c.id && !Array.isArray(c.children)), 'depth cutoff did not stub children');
+assert.ok(shallow.children.some((c) => typeof c.children === 'string' && c.children.includes('select')), 'stub carries no drill-down hint');
 
 const assets = json(await call('export_assets', { file: SAMPLE, frame: FRAME, outDir: 'out/assets' }));
 const files = Object.values(assets);
@@ -65,6 +67,25 @@ assert.ok(files.every((f) => existsSync(f)), 'export_assets reported a file it d
 
 const tokens = json(await call('get_tokens', { file: SAMPLE, frame: FRAME }));
 assert.ok(tokens.colors.length > 5 && tokens.css.startsWith(':root {'));
+// tokens are named for what they do, not numbered arbitrarily
+assert.ok(tokens.colors.every((c) => /^--(surface|text|icon|border|color)(-\d+)?$/.test(c.name)), 'token names are not semantic');
+assert.ok(tokens.colors.some((c) => c.uses.includes('text')), 'usage context lost');
+
+// --- every frame has to fit in context, and stay navigable when it does not ---
+const BUDGET = 30_000;
+let truncatedFrame;
+for (const fr of frames) {
+  const body = (await call('get_frame', { file: SAMPLE, frame: fr.id })).content[0].text;
+  assert.ok(body.length <= BUDGET, `${fr.name} returned ${body.length} B, over the ${BUDGET} B budget`);
+  if (body.includes('get_frame(select')) truncatedFrame ??= { fr, body };
+}
+assert.ok(truncatedFrame, 'no frame was large enough to exercise truncation');
+
+const hint = truncatedFrame.body.match(/select: [^\d]*(\d+:\d+)/);
+assert.ok(hint, 'truncation marker does not name an id to drill into');
+const drilled = json(await call('get_frame', { file: SAMPLE, frame: truncatedFrame.fr.id, select: hint[1] }));
+assert.equal(drilled.id, hint[1], 'select returned the wrong node');
+assert.ok(drilled.children.length > 0, 'drilled subtree came back empty');
 
 const html = (await call('get_html', { file: SAMPLE, frame: FRAME })).content[0].text;
 assert.ok(html.startsWith('<!doctype html>') && html.includes('로그인'));

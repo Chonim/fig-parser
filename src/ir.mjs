@@ -454,32 +454,51 @@ export function toIR(node, blobs, isRoot = true) {
 export function extractTokens(ir) {
   const colors = new Map();
   const fonts = new Map();
-  const bump = (map, key, value) => {
-    const hit = map.get(key) ?? { ...value, count: 0 };
+
+  const seeColor = (value, use) => {
+    if (!value?.startsWith('#') && !value?.startsWith('rgba')) return; // gradients are not tokens
+    const hit = colors.get(value) ?? { value, count: 0, uses: new Set() };
     hit.count++;
-    map.set(key, hit);
+    hit.uses.add(use);
+    colors.set(value, hit);
   };
 
   (function walk(node) {
-    if (node.style?.fill) bump(colors, node.style.fill, { value: node.style.fill, use: 'fill' });
-    for (const p of node.asset?.paths ?? []) if (p.fill?.startsWith('#')) bump(colors, p.fill, { value: p.fill, use: 'icon' });
+    if (node.style?.fill) seeColor(node.style.fill, 'surface');
+    if (node.style?.border?.css) seeColor(node.style.border.css.split(' ').pop(), 'border');
+    for (const p of node.asset?.paths ?? []) seeColor(p.fill, 'icon');
     if (node.text) {
-      bump(colors, node.text.color, { value: node.text.color, use: 'text' });
+      seeColor(node.text.color, 'text');
+      for (const run of node.text.runs ?? []) seeColor(run.color, 'text');
       const key = `${node.text.family}-${node.text.weight}-${node.text.size}`;
-      bump(fonts, key, { family: node.text.family, weight: node.text.weight, size: node.text.size, lineHeight: node.text.lineHeight });
+      const hit = fonts.get(key) ?? { ...node.text, count: 0 };
+      hit.count++;
+      fonts.set(key, hit);
     }
     node.children?.forEach(walk);
   })(ir);
 
+  // a colour only ever used behind text is a text colour; name it for what it does
+  const groupOf = (uses) => (uses.size === 1 ? [...uses][0] : uses.has('surface') ? 'surface' : 'color');
   const byUse = [...colors.values()].sort((a, b) => b.count - a.count);
+  const nth = new Map();
+  for (const c of byUse) {
+    const group = groupOf(c.uses);
+    const n = (nth.get(group) ?? 0) + 1;
+    nth.set(group, n);
+    c.name = n === 1 ? `--${group}` : `--${group}-${n}`;
+    c.uses = [...c.uses];
+  }
+
+  const text = [...fonts.values()].sort((a, b) => b.count - a.count);
+  text.forEach((f, i) => { f.name = i === 0 ? '--font' : `--font-${i + 1}`; });
+
   const css = [
     ':root {',
-    ...byUse.map((c, i) => `  --color-${i + 1}: ${c.value}; /* ${c.use}, ${c.count}x */`),
-    ...[...fonts.values()]
-      .sort((a, b) => b.count - a.count)
-      .map((f, i) => `  --text-${i + 1}: ${f.weight} ${f.size}px${f.lineHeight ? `/${f.lineHeight}` : ''} "${f.family}"; /* ${f.count}x */`),
+    ...byUse.map((c) => `  ${c.name}: ${c.value}; /* ${c.uses.join('+')}, ${c.count}x */`),
+    ...text.map((f) => `  ${f.name}: ${f.weight} ${f.size}px${f.lineHeight ? `/${f.lineHeight}` : ''} "${f.family}"; /* ${f.count}x */`),
     '}',
   ].join('\n');
 
-  return { colors: byUse, text: [...fonts.values()], css };
+  return { colors: byUse, text, css };
 }

@@ -49,13 +49,48 @@ function frameIR(file, frame) {
  * The renderer wants every bezier; the model wants to know a logo is there.
  * Strip path data (it dwarfs everything else) and cut off past `depth`.
  */
+const stub = (node) => ({
+  id: node.id,
+  name: node.name,
+  role: node.role,
+  box: node.box,
+  ...(node.children?.length ? { children: `… ${node.children.length} children — get_frame(select: "${node.id}")` } : {}),
+});
+
 function forModel(node, depth, keepPaths) {
   const asset = node.asset?.kind === 'svg' && !keepPaths
     ? { kind: 'svg', viewBox: node.asset.viewBox, pathCount: node.asset.paths.length, note: 'run export_assets to get the .svg file' }
     : node.asset;
   const out = { ...node, ...(asset ? { asset } : {}) };
-  if (depth <= 1) return { ...out, children: node.children?.length ? [`… ${node.children.length} children`] : [] };
+  // at the cut, keep every child as a stub with its id: a frame with a hundred shallow
+  // children stays navigable instead of collapsing to a single unusable line
+  if (depth <= 1) return { ...out, children: (node.children ?? []).map(stub) };
   return { ...out, children: (node.children ?? []).map((c) => forModel(c, depth - 1, keepPaths)) };
+}
+
+/** biggest tree that stays inside the context budget, shallowest cut that fits */
+const BUDGET = 30_000;
+
+function fit(ir) {
+  const full = forModel(ir, Infinity, false);
+  if (serialize(full).length <= BUDGET) return full;
+  let depth = 1;
+  for (let d = 2; d < 30; d++) {
+    if (serialize(forModel(ir, d, false)).length > BUDGET) break;
+    depth = d;
+  }
+  return forModel(ir, depth, false);
+}
+
+/** the node named by an id or a name, searched depth-first from the frame root */
+function selectNode(ir, select) {
+  const stack = [ir];
+  while (stack.length) {
+    const n = stack.shift();
+    if (n.id === select || n.name === select) return n;
+    stack.unshift(...(n.children ?? []));
+  }
+  throw new Error(`no node matching "${select}" in this frame`);
 }
 
 const svgOf = (node) =>
@@ -66,7 +101,9 @@ const svgOf = (node) =>
     .join('') +
   '</svg>';
 
-const text = (s) => ({ content: [{ type: 'text', text: typeof s === 'string' ? s : JSON.stringify(s, null, 2) }] });
+/** the exact bytes a tool result carries — fit() has to measure this, not compact JSON */
+const serialize = (s) => (typeof s === 'string' ? s : JSON.stringify(s, null, 2));
+const text = (s) => ({ content: [{ type: 'text', text: serialize(s) }] });
 const wrap = (fn) => async (args) => {
   try {
     return text(await fn(args));
@@ -98,15 +135,23 @@ server.registerTool(
     description:
       'Normalized IR for one frame: role, box, inferred layout, style, text, and assets. ' +
       'Icon clusters are collapsed into single SVG nodes, so this is 100-200x smaller than the raw node tree. ' +
-      'Use depth to peek at a large frame before pulling all of it.',
+      'Large frames come back truncated; the placeholder text names the id to pass back as `select` to go deeper.',
     inputSchema: {
       file,
       frame,
-      depth: z.number().int().min(1).optional().describe('max nesting depth, 1 = this node only (default: full tree)'),
+      select: z.string().optional().describe('id or name of a node to return instead of the whole frame'),
+      depth: z.number().int().min(1).optional().describe('max nesting depth, 1 = this node only (default: as deep as fits)'),
       includePaths: z.boolean().optional().describe('inline raw SVG path data (large; usually you want export_assets instead)'),
     },
   },
-  wrap(({ file, frame, depth, includePaths = false }) => forModel(frameIR(file, frame).ir, depth ?? Infinity, includePaths)),
+  wrap(({ file, frame, select, depth, includePaths = false }) => {
+    const root = frameIR(file, frame).ir;
+    const node = select ? selectNode(root, select) : root;
+    // without an explicit depth, cut deep enough to stay usable in context —
+    // except when paths were explicitly asked for, where truncating defeats the point
+    if (depth) return forModel(node, depth, includePaths);
+    return includePaths ? forModel(node, Infinity, true) : fit(node);
+  }),
 );
 
 server.registerTool(
