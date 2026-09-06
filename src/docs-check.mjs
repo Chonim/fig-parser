@@ -5,8 +5,12 @@
  * Scraping numbers out of prose finds false positives — a depth histogram written
  * "깊이 1:1311 2:303" reads as frame ids, and "50 hidden instances painted" is an
  * account of a fixed defect rather than a current count. So a figure that is meant to
- * be checked carries a key: `<!-- fig:key -->` on the line, or `fig:key` in a table
- * cell. Everything else in the documents is prose, deliberately.
+ * be checked carries a marker — the prefix, a measurement key, `=`, and the value —
+ * anywhere on its line. Everything else in the documents is prose, deliberately.
+ *
+ * Writing the marker's own shape into a document makes that document fail, which is
+ * how this rule was found: CLAIMS.md explained the convention by example and the
+ * example was read as a claim about a measurement called "key".
  *
  *   pnpm docs:check
  */
