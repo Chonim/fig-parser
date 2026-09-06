@@ -71,7 +71,18 @@ function styleRules(node, parentLayout, assetUrl) {
     rules.push(['background-image', `url(${assetUrl(node.asset.hash)})`], ...backgroundFit(node.asset.scaleMode));
   }
   if (s.radius) rules.push(['border-radius', s.radius]);
-  if (s.border?.css) rules.push(['border', s.border.css], ['box-sizing', 'border-box']);
+  if (s.border?.css) {
+    if (s.border.sides) {
+      // a single rule was rendering as a full box; `none` on the other three fixes it
+      const [t, r, b, l] = s.border.sides;
+      rules.push(['border-top', t], ['border-right', r], ['border-bottom', b], ['border-left', l]);
+    } else {
+      rules.push(['border', s.border.css]);
+    }
+    // Figma's INSIDE is CSS's own behaviour with border-box; OUTSIDE paints beyond
+    // the node, which content-box reproduces by growing the element by the weight
+    rules.push(['box-sizing', s.border.align === 'OUTSIDE' ? 'content-box' : 'border-box']);
+  }
   if (s.border?.image) {
     // fill clipped to the padding box, stroke gradient to the border box
     const layers = [s.fill && `${asImageLayer(s.fill)} padding-box`, `${s.border.image} border-box`].filter(Boolean);
@@ -99,6 +110,12 @@ function styleRules(node, parentLayout, assetUrl) {
     if (t.letterSpacing) rules.push(['letter-spacing', t.letterSpacing]);
     if (t.align !== 'left') rules.push(['text-align', t.align]);
     if (t.textCase) rules.push(['text-transform', t.textCase]);
+    if (t.maxLines) {
+      rules.push(['display', '-webkit-box'], ['-webkit-line-clamp', String(t.maxLines)],
+        ['-webkit-box-orient', 'vertical'], ['overflow', 'hidden']);
+    } else if (t.truncate) {
+      rules.push(['overflow', 'hidden'], ['text-overflow', 'ellipsis']);
+    }
     if (t.decoration) rules.push(['text-decoration', t.decoration]);
     // a flex container with only text still aligns that text as one anonymous item,
     // but text-align no longer positions it, so mirror it onto the main axis

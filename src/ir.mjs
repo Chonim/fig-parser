@@ -165,11 +165,24 @@ function border(node) {
   const paint = node.strokePaints?.find((p) => p.visible !== false);
   if (!paint) return undefined;
   const width = round(node.strokeWeight ?? 1);
-  if (paint.type === 'SOLID') return { css: `${width}px solid ${cssColor(paint.color, paint.opacity ?? 1)}` };
+  // eight nodes here draw a single rule and were coming out as a full box: with
+  // independent weights the sides that read 0 are simply absent
+  const sides = node.borderStrokeWeightsIndependent
+    ? [node.borderTopWeight, node.borderRightWeight, node.borderBottomWeight, node.borderLeftWeight].map((w) => round(w ?? 0))
+    : undefined;
+  const uneven = sides && new Set(sides).size > 1;
+  if (paint.type === 'SOLID') {
+    const colour = cssColor(paint.color, paint.opacity ?? 1);
+    return {
+      css: `${width}px solid ${colour}`,
+      ...(uneven ? { sides: sides.map((w) => (w ? `${w}px solid ${colour}` : 'none')) } : {}),
+      ...(node.strokeAlign ? { align: node.strokeAlign } : {}),
+    };
+  }
   // a gradient cannot go in `border`, so the renderer paints it as a border-box
   // background layer under a transparent border — which keeps border-radius working
   const image = paintCss(paint, node.size);
-  return image && { width, image };
+  return image && { width, image, ...(node.strokeAlign ? { align: node.strokeAlign } : {}) };
 }
 
 /**
@@ -300,6 +313,9 @@ function textStyle(node) {
     nowrap: node.textAutoResize === 'WIDTH_AND_HEIGHT' || undefined,
     textCase: CASE_CSS[node.textCase],
     decoration: DECORATION_CSS[node.textDecoration],
+    // Figma clamps to a line count and ellipsises; without this the text overruns
+    maxLines: node.maxLines || undefined,
+    truncate: node.textTruncation === 'ENDING' || undefined,
   };
 }
 
@@ -904,6 +920,12 @@ export function toIR(node, blobs, options = {}) {
   if (bound) base.tokens = bound;
   const wired = interactionsOf(node);
   if (wired) base.interactions = wired;
+  // SCALE is Figma's default and says nothing; the rest state how the node is meant
+  // to behave when its parent resizes, which is the responsive intent of the design
+  const constraints = [node.horizontalConstraint, node.verticalConstraint];
+  if (constraints.some((c) => c && c !== 'SCALE')) {
+    base.constraints = { h: node.horizontalConstraint, v: node.verticalConstraint };
+  }
   if (options.instanceOf) {
     base.component = {
       name: options.masterName ?? node.name,

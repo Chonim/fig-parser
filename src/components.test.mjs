@@ -140,6 +140,42 @@ const throughWrapper = repeats.find((n) =>
 assert.ok(throughWrapper, 'no repeat was found across a wrapped sibling');
 assert.ok(throughWrapper.layout.repeat.count >= 3, 'repeat below its own threshold');
 
+// --- the last four fields the IR was ignoring ---
+let constrained = 0;
+let perSide = 0;
+let clamped = 0;
+let outside = 0;
+for (const f of frames) {
+  const ir = toIR(f, message.blobs, { symbols, variables });
+  if (!ir) continue;
+  (function walk(n) {
+    if (n.constraints) constrained++;
+    if (n.style?.border?.sides) perSide++;
+    if (n.text?.maxLines || n.text?.truncate) clamped++;
+    if (n.style?.border?.align === 'OUTSIDE') outside++;
+    n.children?.forEach(walk);
+  })(ir);
+}
+// SCALE is the default and says nothing, so only a real constraint is reported
+assert.ok(constrained > 100, `only ${constrained} nodes report a constraint`);
+assert.ok(perSide > 5, `only ${perSide} nodes report per-side border weights`);
+assert.ok(clamped > 20, `only ${clamped} text nodes report a line clamp`);
+
+// a single rule has to render as one edge, not a box
+const oneEdge = (() => {
+  for (const f of frames) {
+    const ir = toIR(f, message.blobs, { symbols, variables });
+    if (!ir) continue;
+    let hit;
+    (function walk(n) { if (!hit && n.style?.border?.sides?.filter((x) => x === 'none').length === 3) hit = n; n.children?.forEach(walk); })(ir);
+    if (hit) return hit;
+  }
+})();
+assert.ok(oneEdge, 'no single-edge border found to check');
+const edgeCss = renderHTML(oneEdge);
+assert.match(edgeCss, /border-bottom: [^;]*solid/, 'the one real edge is missing');
+assert.match(edgeCss, /border-top: none/, 'the other edges are still drawn');
+
 // --- what the designer wired up is stated, not inferred from a layer name ---
 // TASKS.md said there was no ground truth for calling something a button. There is:
 // 227 nodes carry prototype interactions, and an ON_CLICK is exactly that evidence.
