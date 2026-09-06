@@ -786,7 +786,7 @@ export function toIR(node, blobs, options = {}) {
   const { isRoot = true, symbols, variables } = typeof options === 'boolean' ? { isRoot: options } : options;
   if (node.type === 'INSTANCE' && node.symbolData) {
     const expanded = expandInstance(node, symbols);
-    if (expanded) return toIR(expanded, blobs, { isRoot, symbols, instanceOf: node.symbolData.symbolID });
+    if (expanded) return toIR(expanded, blobs, { isRoot, symbols, variables, instanceOf: node.symbolData.symbolID });
   }
   // the rendered root is placed at the origin; kiwi may also omit matrix cells,
   // so fill in identity defaults rather than trusting the struct to be complete

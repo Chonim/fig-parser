@@ -140,6 +140,26 @@ const throughWrapper = repeats.find((n) =>
 assert.ok(throughWrapper, 'no repeat was found across a wrapped sibling');
 assert.ok(throughWrapper.layout.repeat.count >= 3, 'repeat below its own threshold');
 
+// --- tokens have to reach inside an expanded instance ---
+// The recursive call rebuilt its options object and left `variables` out, so every
+// node under a component came back with invented colour names instead of the
+// author's, which is exactly what CLAUDE.md warns about.
+let insideInstance = 0;
+let tokenedInside = 0;
+for (const f of frames) {
+  const ir = toIR(f, message.blobs, { symbols, variables });
+  if (!ir) continue;
+  (function walk(n, within) {
+    if (within) {
+      insideInstance++;
+      if (n.style?.fillToken || n.style?.borderToken || n.text?.colorToken) tokenedInside++;
+    }
+    n.children?.forEach((c) => walk(c, within || Boolean(n.component)));
+  })(ir, false);
+}
+assert.ok(insideInstance > 300, `expected many nodes inside instances, found ${insideInstance}`);
+assert.ok(tokenedInside > 100, `only ${tokenedInside} of ${insideInstance} nodes inside instances carry a token`);
+
 // --- the variable catalogue: sets, modes, aliases ---
 const catalogue = readVariables(message.nodeChanges);
 assert.ok(catalogue.variables.length > 500, `expected a full variable catalogue, found ${catalogue.variables.length}`);
