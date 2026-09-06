@@ -218,6 +218,21 @@ const dividers = [];
 assert.ok(dividers.length >= 8, `expected stroke-only dividers, found ${dividers.length}`);
 assert.ok(dividers.every((d) => d.asset.paths.length > 0), 'a stroke-only shape produced no path');
 assert.ok(dividers.every((d) => d.asset.paths.every((p) => /^M/.test(p.d) && p.fill !== 'none')), 'divider ink is unpainted');
+// a hairline's node box has no height; a viewBox taken from it cannot scale and
+// the browser draws nothing, so those take their size from the ink instead
+assert.ok(dividers.every((d) => d.box.h > 0), 'a divider still has a zero-height box');
+assert.ok(dividers.every((d) => !/ 0$/.test(d.asset.viewBox)), 'a viewBox still has no height');
+// everywhere else the box is kept and the outlined stroke is allowed to overflow
+assert.match(renderHTML(tableIR), /<svg[^>]* overflow="visible"/, 'icons still clip to their viewBox');
+
+let zeroSized = 0;
+for (const frame of collectFrames(roots)) {
+  (function walk(n) {
+    if (n.asset?.kind === 'svg' && (n.box.w === 0 || n.box.h === 0)) zeroSized++;
+    n.children?.forEach(walk);
+  })(toIR(frame, message.blobs) ?? { children: [] });
+}
+assert.equal(zeroSized, 0, `${zeroSized} icons have a box that cannot render`);
 assert.ok(!renderHTML(tableIR).includes('stroke:'), 'an outlined stroke was re-emitted as a CSS stroke');
 
 const body = tableIR.children.find((c) => c.name === 'Rectangle 25');

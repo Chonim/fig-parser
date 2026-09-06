@@ -165,7 +165,10 @@ export function renderHTML(root, { assetUrl = (h) => `assets/${h}.png`, title = 
       const paths = node.asset.paths
         .map((p) => `<path d="${p.d}" fill="${p.fill}"${p.transform ? ` transform="${p.transform}"` : ''}${p.rule ? ` fill-rule="${p.rule}"` : ''}/>`)
         .join('');
-      return `${pad}<svg class="${cls}" viewBox="${node.asset.viewBox}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(node.name)}">${defs}${paths}</svg>`;
+      // Outlined strokes sit a little outside the node box they came from, and an
+      // <svg> clips to its viewBox by default. The coordinate system is unscaled, so
+      // letting it overflow paints the missing edges exactly where they belong.
+      return `${pad}<svg class="${cls}" viewBox="${node.asset.viewBox}" overflow="visible" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(node.name)}">${defs}${paths}</svg>`;
     }
     const kids = node.children.map((c) => walk(c, node.layout, depth + 1)).join('\n');
     return `${pad}<div class="${cls}">\n${kids}\n${pad}</div>`;

@@ -160,6 +160,27 @@ function border(node) {
   return image && { width, image };
 }
 
+/**
+ * Where the ink actually lands, transforms applied. A hairline's node box is zero
+ * pixels tall while its outlined stroke is a pixel high either side of the centre,
+ * so a viewBox taken from the box has no height and the browser draws nothing.
+ */
+function inkBounds(paths) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of paths) {
+    const t = p.transform?.match(/-?[\d.]+/g)?.map(Number) ?? [];
+    const m = p.transform?.startsWith('matrix') ? t : [1, 0, 0, 1, t[0] ?? 0, t[1] ?? 0];
+    const nums = p.d.match(/-?[\d.]+/g)?.map(Number) ?? [];
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      const x = m[0] * nums[i] + m[2] * nums[i + 1] + m[4];
+      const y = m[1] * nums[i] + m[3] * nums[i + 1] + m[5];
+      x0 = Math.min(x0, x); y0 = Math.min(y0, y);
+      x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+    }
+  }
+  return Number.isFinite(x0) ? { x0, y0, x1, y1 } : undefined;
+}
+
 /** wrap a solid colour so it can sit in `background` next to real gradient layers */
 export const asImageLayer = (fill) => (fill?.startsWith('#') || fill?.startsWith('rgba') ? `linear-gradient(${fill}, ${fill})` : fill);
 
@@ -801,7 +822,18 @@ export function toIR(node, blobs, options = {}) {
     // paths are collected in the cluster's own coordinate space, so cancel its transform
     collectPaths(node, blobs, matInv(node.transform ?? IDENTITY), paths, defs, variables);
     if (!paths.length) return null;
-    const asset = { kind: 'svg', viewBox: `0 0 ${box.w} ${box.h}`, paths };
+    // A box with no width or height cannot scale a viewBox at all, so those take
+    // their size from the ink. Everywhere else the box is kept and the renderer
+    // lets the SVG overflow, which draws the same pixels without moving anything.
+    const ink = (box.w === 0 || box.h === 0) && inkBounds(paths);
+    if (ink) {
+      box.x = round(box.x + ink.x0);
+      box.y = round(box.y + ink.y0);
+      box.w = round(Math.max(ink.x1 - ink.x0, 1));
+      box.h = round(Math.max(ink.y1 - ink.y0, 1));
+    }
+    const viewBox = ink ? `${round(ink.x0)} ${round(ink.y0)} ${box.w} ${box.h}` : `0 0 ${box.w} ${box.h}`;
+    const asset = { kind: 'svg', viewBox, paths };
     if (defs.length) asset.defs = defs;
     return { ...base, role: 'icon', asset, style: { opacity: node.opacity ?? 1 }, children: [] };
   }
