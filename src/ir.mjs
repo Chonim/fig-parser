@@ -32,6 +32,43 @@ function solidFill(node) {
   return paint && cssColor(paint.color, paint.opacity ?? 1);
 }
 
+const stopList = (paint) =>
+  (paint.stops ?? [])
+    .map((s) => `${cssColor(s.color, paint.opacity ?? 1)} ${round(s.position * 100)}%`)
+    .join(', ');
+
+/**
+ * Figma stores a gradient as the affine transform taking the shape's unit square into
+ * gradient space, where the ramp runs (0,0)->(1,0). Invert it to get the ramp back in
+ * shape space, then express that direction as a CSS angle (0deg = up, clockwise).
+ */
+function linearGradient(paint, size) {
+  const m = paint.transform;
+  if (!m) return `linear-gradient(180deg, ${stopList(paint)})`;
+  const det = m.m00 * m.m11 - m.m01 * m.m10;
+  if (!det) return `linear-gradient(180deg, ${stopList(paint)})`;
+  const inv = (x, y) => ({
+    x: (m.m11 * (x - m.m02) - m.m01 * (y - m.m12)) / det,
+    y: (-m.m10 * (x - m.m02) + m.m00 * (y - m.m12)) / det,
+  });
+  const a = inv(0, 0);
+  const b = inv(1, 0);
+  const dx = (b.x - a.x) * (size?.x ?? 1);
+  const dy = (b.y - a.y) * (size?.y ?? 1);
+  const deg = round((Math.atan2(dx, -dy) * 180) / Math.PI);
+  return `linear-gradient(${deg}deg, ${stopList(paint)})`;
+}
+
+/** any visible fill as a CSS background value: solid, linear gradient, or a radial approximation */
+function fillOf(node) {
+  const paint = node.fillPaints?.find((p) => p.visible !== false && p.type !== 'IMAGE');
+  if (!paint) return undefined;
+  if (paint.type === 'SOLID') return cssColor(paint.color, paint.opacity ?? 1);
+  if (paint.type === 'GRADIENT_LINEAR') return linearGradient(paint, node.size);
+  if (paint.type?.startsWith('GRADIENT')) return `radial-gradient(circle, ${stopList(paint)})`;
+  return undefined;
+}
+
 function imageFill(node) {
   const paint = node.fillPaints?.find((p) => p.visible !== false && p.type === 'IMAGE' && p.image?.hash);
   return paint && { hash: hashHex(paint.image.hash), scaleMode: paint.imageScaleMode ?? 'FILL' };
@@ -52,6 +89,7 @@ function shadow(node) {
 }
 
 function radius(node) {
+  if (node.type === 'ELLIPSE') return '50%';
   if (node.rectangleCornerRadiiIndependent) {
     const r = [node.rectangleTopLeftCornerRadius, node.rectangleTopRightCornerRadius, node.rectangleBottomRightCornerRadius, node.rectangleBottomLeftCornerRadius];
     return r.map((v) => `${round(v ?? 0)}px`).join(' ');
@@ -112,9 +150,12 @@ function collectPaths(node, blobs, dx, dy, out) {
   for (const child of node.children ?? []) collectPaths(child, blobs, x, y, out);
 }
 
-/** children that cover (nearly) the whole parent are backdrop layers, not siblings in flow */
+/**
+ * Full-bleed children of the frame itself are page backdrops. Deeper down the same
+ * shape is just a card's fill rect, so the rule only applies at the top level.
+ */
 const isBackdrop = (child, parent) =>
-  parent.size && child.size && child.size.x >= parent.size.x * 0.98 && child.size.y >= parent.size.y * 0.98;
+  parent.size && child.box.w >= parent.size.x * 0.98 && child.box.h >= parent.size.y * 0.98;
 
 const span = (a, b) => Math.max(0, Math.min(a[1], b[1]) - Math.max(a[0], b[0]));
 
@@ -166,7 +207,7 @@ function inferLayout(node, kids) {
   return { mode: 'absolute' };
 }
 
-export function toIR(node, blobs, parent = null) {
+export function toIR(node, blobs, isRoot = true) {
   const t = node.transform ?? {};
   const box = { x: round(t.m02 ?? 0), y: round(t.m12 ?? 0), w: round(node.size?.x ?? 0), h: round(node.size?.y ?? 0) };
   const base = { id: node.id, name: node.name, box };
@@ -187,15 +228,15 @@ export function toIR(node, blobs, parent = null) {
 
   const image = imageFill(node);
   const style = {
-    fill: image ? undefined : solidFill(node),
+    fill: image ? undefined : fillOf(node),
     radius: radius(node),
     border: border(node),
     shadow: shadow(node),
     opacity: node.opacity ?? 1,
   };
 
-  const kids = (node.children ?? []).map((c) => toIR(c, blobs, node)).filter(Boolean);
-  for (const k of kids) if (isBackdrop({ size: { x: k.box.w, y: k.box.h } }, node)) k.role = 'backdrop';
+  const kids = (node.children ?? []).map((c) => toIR(c, blobs, false)).filter(Boolean);
+  if (isRoot) for (const k of kids) if (isBackdrop(k, node)) k.role = 'backdrop';
 
   if (image && !kids.length) {
     return { ...base, role: 'image', asset: { kind: 'image', ...image }, style, children: [] };

@@ -55,8 +55,14 @@ export function buildTree(nodeChanges) {
     const parent = node.parentIndex && byId.get(key(node.parentIndex.guid));
     (parent ? parent.children : roots).push(node);
   }
+  // positions are fractional-index strings compared byte-wise; localeCompare would
+  // reorder the punctuation they are built from, scrambling z-order
   const sort = (list) => {
-    list.sort((a, b) => (a.parentIndex?.position ?? '').localeCompare(b.parentIndex?.position ?? ''));
+    list.sort((a, b) => {
+      const x = a.parentIndex?.position ?? '';
+      const y = b.parentIndex?.position ?? '';
+      return x < y ? -1 : x > y ? 1 : 0;
+    });
     list.forEach((n) => sort(n.children));
   };
   sort(roots);

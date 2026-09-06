@@ -21,7 +21,10 @@ assert.equal(count(roots), message.nodeChanges.length, 'buildTree lost nodes');
 
 const canvas = roots.flatMap((r) => r.children).find((n) => n.type === 'CANVAS');
 const positions = canvas.children.map((c) => c.parentIndex.position);
-assert.deepEqual(positions, [...positions].sort((a, b) => a.localeCompare(b)), 'siblings out of fractional-index order');
+const byBytes = [...positions].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+assert.deepEqual(positions, byBytes, 'siblings out of fractional-index order');
+// localeCompare disagrees with byte order on these strings — that difference is the bug this guards
+assert.notDeepEqual(positions, [...positions].sort((a, b) => a.localeCompare(b)), 'sample no longer exercises the collation trap');
 
 // --- path blobs ---
 const geom = message.nodeChanges.find((n) => n.fillGeometry?.length)?.fillGeometry[0];
