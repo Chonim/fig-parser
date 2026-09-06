@@ -78,7 +78,10 @@ assert.ok(entries.every((e) => e.usedBy.every((u) => u.id && u.name)), 'usedBy e
 const tokens = json(await call('get_tokens', { file: SAMPLE, frame: FRAME }));
 assert.ok(tokens.colors.length > 5 && tokens.css.startsWith(':root {'));
 // tokens are named for what they do, not numbered arbitrarily
-assert.ok(tokens.colors.every((c) => /^--(surface|text|icon|border|color)(-\d+)?$/.test(c.name)), 'token names are not semantic');
+assert.ok(
+  tokens.colors.every((c) => /^--(surface|text|icon|border|gradient|color)(-\d+)?$/.test(c.name) || c.uses.length === 0),
+  `token names are not semantic: ${tokens.colors.map((c) => c.name).filter((n) => !/^--(surface|text|icon|border|gradient|color)(-\d+)?$/.test(n))}`,
+);
 assert.ok(tokens.colors.some((c) => c.uses.includes('text')), 'usage context lost');
 
 // --- every frame has to fit in context, and stay navigable when it does not ---

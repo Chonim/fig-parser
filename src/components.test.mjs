@@ -79,6 +79,14 @@ assert.match(boundPath.fill, /^(#|rgba|url\(#)/, 'a bound path lost its rendered
 // a hidden frame converts to null, and the token pass has to survive that
 assert.doesNotThrow(() => extractTokens(null));
 
+// --- a clip or group wrapper must not hide the shape it wraps ---
+const repeats = allNodes.filter((n) => n.layout?.repeat);
+assert.ok(repeats.length > 50, `expected repeated structures, found ${repeats.length}`);
+const throughWrapper = repeats.find((n) =>
+  n.children.some((c) => c.children?.length === 1 && !c.style?.fill && !c.style?.border));
+assert.ok(throughWrapper, 'no repeat was found across a wrapped sibling');
+assert.ok(throughWrapper.layout.repeat.count >= 3, 'repeat below its own threshold');
+
 // --- the variable catalogue: sets, modes, aliases ---
 const catalogue = readVariables(message.nodeChanges);
 assert.ok(catalogue.variables.length > 500, `expected a full variable catalogue, found ${catalogue.variables.length}`);

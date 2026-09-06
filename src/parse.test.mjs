@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { parseFigFile, buildTree, decodePathBlob } from './parse.mjs';
-import { toIR } from './ir.mjs';
+import { toIR, extractTokens } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
 const SAMPLE = 'samples/kyowon-full.fig';
@@ -144,6 +144,14 @@ assert.ok(column.children.some((c) => c.id === column.layout.repeat.like), 'repe
 const sizes = new Set(column.children.map((c) => `${c.box.w}x${c.box.h}`));
 assert.equal(sizes.size, 1, 'repeat claimed for children of differing sizes');
 assert.ok(!flat.some((n) => n.layout?.repeat), 'login frame has no list, but one was inferred');
+
+// --- gradients are tokens too ---
+const archiveTokens = extractTokens(nestedIR);
+const gradients = archiveTokens.colors.filter((c) => c.name.startsWith('--gradient'));
+assert.ok(gradients.length >= 2, `expected the nav tab gradients as tokens, found ${gradients.length}`);
+assert.ok(gradients.every((g) => g.value.includes('gradient(')), 'a non-gradient landed in the gradient group');
+// url(#…) points into one icon's own <defs> and means nothing as a token
+assert.ok(!archiveTokens.css.includes('url('), 'an SVG paint reference leaked into the token sheet');
 
 // --- masks, blend modes, inner shadow ---
 const archiveFlat = [];

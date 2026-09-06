@@ -420,9 +420,25 @@ function labelOf(node) {
   return texts.length === 1 ? texts[0].text.content : undefined;
 }
 
-/** rough shape of a node: same role, same size, same immediate child roles */
-const signature = (n) =>
-  [n.role, Math.round(n.box.w), Math.round(n.box.h), (n.children ?? []).map((c) => c.role).sort().join('.')].join('|');
+/**
+ * Rough shape of a node: same role, same size, same immediate child roles.
+ * A wrapper that only clips or groups is not part of the shape, so look through it
+ * — otherwise a row wrapped in a mask never matches the identical rows beside it.
+ */
+const unwrap = (n) => {
+  let node = n;
+  for (let i = 0; i < 3; i++) {
+    const only = node.children?.length === 1 && node.children[0];
+    if (!only || node.style?.fill || node.style?.border || node.role === 'text') break;
+    node = only;
+  }
+  return node;
+};
+
+const signature = (n) => {
+  const s = unwrap(n);
+  return [s.role, Math.round(s.box.w), Math.round(s.box.h), (s.children ?? []).map((c) => c.role).sort().join('.')].join('|');
+};
 
 /**
  * Three or more siblings of the same shape are a list, and saying so is worth more
@@ -732,7 +748,10 @@ export function extractTokens(ir) {
   const fonts = new Map();
 
   const seeColor = (value, use, authored) => {
-    if (!value?.startsWith('#') && !value?.startsWith('rgba')) return; // gradients are not tokens
+    // url(#…) is a reference into one icon's own <defs>, meaningless outside it
+    if (!value || value.startsWith('url(') || value === 'none' || value === 'currentColor') return;
+    // a gradient reused across several surfaces is as much a token as a flat colour
+    if (!value.startsWith('#') && !value.startsWith('rgba')) use = 'gradient';
     const hit = colors.get(value) ?? { value, count: 0, uses: new Set() };
     hit.count++;
     hit.uses.add(use);
@@ -758,7 +777,8 @@ export function extractTokens(ir) {
   })(ir);
 
   // a colour only ever used behind text is a text colour; name it for what it does
-  const groupOf = (uses) => (uses.size === 1 ? [...uses][0] : uses.has('surface') ? 'surface' : 'color');
+  const groupOf = (uses) =>
+    uses.has('gradient') ? 'gradient' : uses.size === 1 ? [...uses][0] : uses.has('surface') ? 'surface' : 'color';
   const byUse = [...colors.values()].sort((a, b) => b.count - a.count);
   const nth = new Map();
   for (const c of byUse) {
