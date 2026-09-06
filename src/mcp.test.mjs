@@ -40,7 +40,13 @@ await rpc('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clien
 send({ jsonrpc: '2.0', method: 'notifications/initialized' });
 
 const tools = (await rpc('tools/list')).tools.map((t) => t.name);
-assert.deepEqual(tools.sort(), ['export_assets', 'get_frame', 'get_html', 'get_tokens', 'list_frames']);
+assert.deepEqual(tools.sort(), ['export_assets', 'get_frame', 'get_html', 'get_tokens', 'get_variables', 'list_frames']);
+
+// this sample barely uses variables; the catalogue still has to come back well-formed
+const vars = json(await call('get_variables', { file: SAMPLE }));
+assert.ok(vars.variables.length >= 1, 'no variables read');
+assert.ok(vars.variables.every((v) => v.token.startsWith('--') && v.type), 'variable entry is missing token or type');
+assert.match(vars.css, /^:root \{/, 'variable CSS has no root block');
 
 const frames = json(await call('list_frames', { file: SAMPLE }));
 assert.ok(frames.some((f) => f.name === FRAME), 'login frame missing from list_frames');
@@ -99,5 +105,5 @@ assert.equal(missing.isError, true);
 assert.match(missing.content[0].text, /frame not found/);
 
 proc.kill();
-console.log(`ok — 5 tools, ${frames.length} frames, IR ${full.content[0].text.length} B ` +
+console.log(`ok — ${tools.length} tools, ${frames.length} frames, IR ${full.content[0].text.length} B ` +
   `(vs ${withPaths.content[0].text.length} B with paths), ${files.length} assets`);

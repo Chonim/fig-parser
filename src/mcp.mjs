@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve, relative, join, isAbsolute } from 'node:path';
 import { parseFigFile, buildTree } from './parse.mjs';
-import { toIR, extractTokens, symbolIndex, variableIndex } from './ir.mjs';
+import { toIR, extractTokens, symbolIndex, variableIndex, readVariables } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
 const ROOT = resolve(process.env.FIG_ROOT ?? process.cwd());
@@ -212,6 +212,29 @@ server.registerTool(
       node.children?.forEach(walk);
     })(ir);
     return Object.fromEntries(written);
+  }),
+);
+
+server.registerTool(
+  'get_variables',
+  {
+    title: 'Get design variables',
+    description:
+      "The design system's own variable definitions — every set, its modes, and each variable's value per mode, " +
+      'as CSS custom properties with a block per extra mode (light/dark, responsive breakpoints). ' +
+      'Semantic variables that point at primitives come back as var() references rather than flattened values. ' +
+      'This is what the author declared; get_tokens reports what one frame actually uses.',
+    inputSchema: { file, set: z.string().optional().describe('only variables from this set (substring, case-insensitive)') },
+  },
+  wrap(({ file, set }) => {
+    const all = readVariables(load(file).message.nodeChanges);
+    if (!all.variables.length) return 'this file defines no variables';
+    if (!set) return all;
+    const match = set.toLowerCase();
+    return {
+      sets: all.sets.filter((s) => s.name.toLowerCase().includes(match)),
+      variables: all.variables.filter((v) => v.set?.toLowerCase().includes(match)),
+    };
   }),
 );
 

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { parseFigFile, buildTree } from './parse.mjs';
-import { toIR, symbolIndex, variableIndex, extractTokens } from './ir.mjs';
+import { toIR, symbolIndex, variableIndex, extractTokens, readVariables } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
 // The other sample has no components and no auto-layout, so these paths need
@@ -67,10 +67,28 @@ assert.ok(tokens.css.includes('--background-brand-default'), 'a known design var
 // without the index the same colours fall back to usage-based names
 assert.ok(!extractTokens(bare).css.includes('--background-brand-default'), 'token name appeared without the variable index');
 
+// --- the variable catalogue: sets, modes, aliases ---
+const catalogue = readVariables(message.nodeChanges);
+assert.ok(catalogue.variables.length > 500, `expected a full variable catalogue, found ${catalogue.variables.length}`);
+assert.ok(catalogue.sets.some((s) => s.modes.length > 1), 'no multi-mode set found');
+
+const types = new Set(catalogue.variables.map((v) => v.type));
+for (const t of ['COLOR', 'FLOAT', 'STRING']) assert.ok(types.has(t), `${t} variables were dropped`);
+
+// lengths carry a unit, weights must not
+assert.match(catalogue.css, /--radius-sm: \d+px;/, 'numeric length lost its unit');
+assert.match(catalogue.css, /--font-weight-regular: 400;/, 'a unitless number was given px');
+// a semantic variable pointing at a primitive stays a reference
+assert.match(catalogue.css, /: var\(--[\w-]+\);/, 'aliases were flattened instead of referenced');
+// extra modes get their own block rather than overwriting the base
+const blocks = catalogue.css.split('\n\n');
+assert.ok(blocks.length > 1 && blocks.slice(1).every((b) => b.startsWith('[data-')), 'mode blocks missing or malformed');
+assert.ok(blocks.slice(1).some((b) => b.split('\n').length > 50), 'the dark mode block came back nearly empty');
+
 const notification = frames.find((f) => f.name === 'Notification');
 const notifCss = renderHTML(toIR(notification, message.blobs, { symbols, variables }));
 assert.match(notifCss, /display: flex/, 'auto-layout never reached the CSS');
 
 console.log(`ok — ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
   `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames, ` +
-  `${authored.length} tokens named from variables`);
+  `${authored.length} tokens named from variables, ${catalogue.variables.length} variables in ${catalogue.sets.length} sets`);

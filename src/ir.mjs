@@ -459,13 +459,98 @@ export function variableIndex(nodeChanges) {
   return index;
 }
 
+const slug = (name) => name.toLowerCase().replace(/[^\w가-힣]+/g, '-').replace(/^-+|-+$/g, '');
+
 /** "Primary/Purple-0" -> "--primary-purple-0" */
-export const tokenName = (name) => `--${name.toLowerCase().replace(/[^\w가-힣]+/g, '-').replace(/^-+|-+$/g, '')}`;
+export const tokenName = (name) => `--${slug(name)}`;
 
 const paintVariable = (paint, variables) => {
   const alias = paint?.colorVar?.value?.alias?.guid;
   return alias && variables?.get(guidKey(alias));
 };
+
+// most numeric design tokens are lengths; these are the ones that are not
+const UNITLESS = /weight|opacity|line.?height|z.?index|count|ratio/i;
+
+/**
+ * The design system's own variable definitions: every set, its modes, and each
+ * variable's value per mode. This is what the author declared, as opposed to
+ * extractTokens, which reports the colours a particular frame happens to use.
+ *
+ * Values may alias other variables — a semantic token pointing at a primitive —
+ * which becomes a var() reference rather than a flattened colour.
+ */
+export function readVariables(nodeChanges) {
+  const setOf = new Map();
+  for (const n of nodeChanges) {
+    if (n.type !== 'VARIABLE_SET' || n.isSoftDeleted) continue;
+    setOf.set(guidKey(n.guid), {
+      name: n.name,
+      modes: (n.variableSetModes ?? []).map((m) => ({ key: guidKey(m.id), name: m.name })),
+    });
+  }
+
+  const byGuid = new Map();
+  const variables = [];
+  for (const n of nodeChanges) {
+    if (n.type !== 'VARIABLE' || n.isSoftDeleted || !n.name) continue;
+    const setKey = n.variableSetID?.guid && guidKey(n.variableSetID.guid);
+    const set = setKey && setOf.get(setKey);
+    const entry = {
+      name: n.name,
+      token: tokenName(n.name),
+      type: n.variableResolvedType,
+      set: set?.name,
+      setKey: setKey || undefined,
+      values: {},
+    };
+    for (const e of n.variableDataValues?.entries ?? []) {
+      const { value, dataType } = e.variableData ?? {};
+      if (!e.modeID || !value) continue;
+      entry.values[guidKey(e.modeID)] =
+        dataType === 'ALIAS' ? (value.alias?.guid ? { alias: guidKey(value.alias.guid) } : undefined)
+        : dataType === 'COLOR' ? cssColor(value.colorValue)
+        : dataType === 'FLOAT' ? (UNITLESS.test(n.name) ? value.floatValue : `${round(value.floatValue)}px`)
+        : dataType === 'STRING' ? value.textValue
+        : value.boolValue;
+    }
+    byGuid.set(guidKey(n.guid), entry);
+    variables.push(entry);
+  }
+
+  const render = (v, modeKey) => {
+    const raw = v.values[modeKey] ?? Object.values(v.values)[0];
+    if (raw?.alias) return byGuid.has(raw.alias) ? `var(${byGuid.get(raw.alias).token})` : undefined;
+    return raw === undefined ? undefined : String(raw);
+  };
+
+  const block = (selector, pick) => {
+    const lines = variables
+      .map((v) => {
+        const mode = pick(v);
+        if (!mode) return undefined;
+        const value = render(v, mode);
+        return value === undefined ? undefined : `  ${v.token}: ${value}; /* ${v.set ?? 'unset'} */`;
+      })
+      .filter(Boolean);
+    return lines.length ? [`${selector} {`, ...lines, '}'].join('\n') : undefined;
+  };
+
+  // the first mode of every set is the baseline; each extra mode gets its own block.
+  // a live variable can outlive its set, so fall back to whatever mode it still has
+  const blocks = [block(':root', (v) => setOf.get(v.setKey)?.modes[0]?.key ?? Object.keys(v.values)[0])];
+  for (const [setKey, set] of setOf) {
+    for (const mode of set.modes.slice(1)) {
+      blocks.push(block(`[data-${slug(set.name)}="${slug(mode.name)}"]`, (v) => (v.setKey === setKey ? mode.key : undefined)));
+    }
+  }
+
+  return {
+    sets: [...setOf.values()].map((s) => ({ name: s.name, modes: s.modes.map((m) => m.name) })),
+    variables: variables.map(({ setKey, ...v }) => v),
+    css: blocks.filter(Boolean).join('\n\n'),
+  };
+}
 
 /**
  * Every SYMBOL master in the document, so INSTANCE nodes can be expanded.
