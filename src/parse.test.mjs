@@ -349,7 +349,8 @@ assert.equal(missingFallback, 0, `${missingFallback} frames emit a font token wi
 // --- masks, blend modes, inner shadow ---
 const archiveFlat = [];
 (function walk(n) { archiveFlat.push(n); n.children?.forEach(walk); })(archiveIR);
-const clipped = archiveFlat.find((n) => n.style?.clip);
+// every frame clips now, so pick the one whose clipping came from a folded mask
+const clipped = archiveFlat.find((n) => n.name === 'Mask group' && n.style?.clip);
 assert.ok(clipped, 'mask was not folded into a clipping parent');
 assert.ok(clipped.style.radius, 'clipping parent lost the mask radius');
 // the consumed mask filled its parent exactly; no child should still do that
@@ -358,6 +359,26 @@ assert.ok(
   'mask shape is still being drawn as ink inside the clip',
 );
 assert.match(renderHTML(archiveIR), /overflow: hidden/, 'clip never reached the CSS');
+
+// Figma's "clip content" is frameMaskDisabled inverted, and it decides whether a
+// child that sticks out is drawn or cut. Only real containers clip — a group has no
+// box of its own — and a frame that has clipping turned off must not.
+let clipping = 0;
+let wrongly = 0;
+for (const frame of collectFrames(roots)) {
+  const raw = new Map();
+  (function walk(n) { raw.set(n.id, n); n.children?.forEach(walk); })(frame);
+  (function walk(n) {
+    const source = raw.get(n.id);
+    if (n.style?.clip) {
+      clipping++;
+      if (source && source.frameMaskDisabled === true) wrongly++;
+    }
+    n.children?.forEach(walk);
+  })(toIR(frame, message.blobs) ?? { children: [] });
+}
+assert.ok(clipping > 100, `only ${clipping} containers clip their contents`);
+assert.equal(wrongly, 0, `${wrongly} containers clip although the design says not to`);
 
 const blended = flat.find((n) => n.style?.blend);
 assert.equal(blended?.style.blend, 'darken', 'blend mode dropped');
