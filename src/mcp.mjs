@@ -2,31 +2,56 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { resolve, relative, join, isAbsolute } from 'node:path';
+import { mkdirSync, writeFileSync, realpathSync, statSync } from 'node:fs';
+import { resolve, relative, join, isAbsolute, dirname } from 'node:path';
 import { parseFigFile, buildTree, collectFrames } from './parse.mjs';
 import { toIR, extractTokens, symbolIndex, variableIndex, readVariables } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
 const ROOT = resolve(process.env.FIG_ROOT ?? process.cwd());
 
-/** keep .fig reads inside FIG_ROOT — these paths come from the model, not the user */
+const REAL_ROOT = (() => { try { return realpathSync(ROOT); } catch { return ROOT; } })();
+
+/**
+ * Keep reads and writes inside FIG_ROOT — these paths come from the model, not the
+ * user. Comparing the resolved string is not enough: a symlink inside the root
+ * points wherever it likes and `..` never appears, so the real path is taken, and
+ * for a path being created, the real path of the nearest ancestor that exists.
+ */
 function safePath(p) {
   const full = isAbsolute(p) ? resolve(p) : resolve(ROOT, p);
-  const rel = relative(ROOT, full);
+  let probe = full;
+  let tail = '';
+  for (;;) {
+    try {
+      statSync(probe);
+      break;
+    } catch {
+      const parent = dirname(probe);
+      if (parent === probe) throw new Error(`path escapes FIG_ROOT (${ROOT}): ${p}`);
+      tail = tail ? join(relative(parent, probe), tail) : relative(parent, probe);
+      probe = parent;
+    }
+  }
+  const real = join(realpathSync(probe), tail);
+  const rel = relative(REAL_ROOT, real);
   if (rel.startsWith('..') || isAbsolute(rel)) throw new Error(`path escapes FIG_ROOT (${ROOT}): ${p}`);
-  return full;
+  return real;
 }
 
 const cache = new Map();
 function load(file) {
   const path = safePath(file);
-  if (!cache.has(path)) {
+  // a path is not an identity: the file behind it can be replaced while the server runs
+  const { mtimeMs, size } = statSync(path);
+  const stamp = `${mtimeMs}:${size}`;
+  if (cache.get(path)?.stamp !== stamp) {
     const doc = parseFigFile(path);
     const roots = buildTree(doc.message.nodeChanges);
     cache.set(path, {
       ...doc,
       path,
+      stamp,
       frames: collectFrames(roots),
       symbols: symbolIndex(roots),
       variables: variableIndex(doc.message.nodeChanges),
@@ -40,7 +65,12 @@ const framesOf = (doc) => doc.frames;
 function frameIR(file, frame) {
   const doc = load(file);
   const found = framesOf(doc).find((f) => f.name === frame || f.id === frame);
-  if (!found) throw new Error(`frame not found: ${frame}\navailable: ${framesOf(doc).map((f) => f.name).join(', ')}`);
+  if (!found) {
+    // 19 frames in the design system have no name at all, so listing names alone
+    // answers a failed lookup with a row of blanks
+    const available = framesOf(doc).map((f) => `${f.id}${f.name ? ` (${f.name})` : ''}`).join(', ');
+    throw new Error(`frame not found: ${frame}\navailable: ${available}`);
+  }
   return { doc, node: found, ir: toIR(found, doc.message.blobs, { symbols: doc.symbols, variables: doc.variables }) };
 }
 
@@ -222,6 +252,7 @@ server.registerTool(
     description:
       'Normalized IR for one frame: role, box, inferred layout, style, text, and assets. ' +
       'Icon clusters are collapsed into single SVG nodes, so this is 100-200x smaller than the raw node tree. ' +
+      'A painted box holding exactly one piece of text carries that text as `label` — a button, a tab, a chip. ' +
       'Children are in paint order, not reading order: `layout.rows` groups them into visual rows, ' +
       'top to bottom and left to right, as space-separated indices into that node\'s own children. ' +
       'Large frames come back truncated; the placeholder text names the id to pass back as `select` to go deeper.',
@@ -311,16 +342,62 @@ server.registerTool(
       'as CSS custom properties with a block per extra mode (light/dark, responsive breakpoints). ' +
       'Semantic variables that point at primitives come back as var() references rather than flattened values. ' +
       'This is what the author declared; get_tokens reports what one frame actually uses.',
-    inputSchema: { file, set: z.string().optional().describe('only variables from this set (substring, case-insensitive)') },
+    inputSchema: {
+      file,
+      set: z.string().optional().describe('only variables from this set (substring, case-insensitive)'),
+      frame: z.string().optional().describe('only variables this frame actually binds'),
+    },
   },
-  wrap(({ file, set }) => {
-    const all = readVariables(load(file).message.nodeChanges);
+  wrap(({ file, set, frame }) => {
+    const doc = load(file);
+    const all = readVariables(doc.message.nodeChanges);
     if (!all.variables.length) return 'this file defines no variables';
-    if (!set) return all;
-    const match = set.toLowerCase();
+
+    let { sets, variables, css } = all;
+    // narrowing has to narrow the stylesheet too, or the filtered answer still
+    // carries every declaration in the file and blows the budget on its own
+    const narrow = (kept) => {
+      const tokens = new Set(kept.map((v) => v.token));
+      const blocks = css.split('\n\n').map((block) => {
+        const [head, ...lines] = block.split('\n');
+        const body = lines.filter((l) => tokens.has(l.trim().split(':')[0]));
+        return body.length ? [head, ...body, '}'].join('\n') : undefined;
+      });
+      css = blocks.filter(Boolean).join('\n\n');
+    };
+    if (set) {
+      const match = set.toLowerCase();
+      sets = sets.filter((s) => s.name.toLowerCase().includes(match));
+      variables = variables.filter((v) => v.set?.toLowerCase().includes(match));
+      narrow(variables);
+    }
+    if (frame) {
+      // only what this frame binds, which is usually a handful out of hundreds
+      const ir = frameIR(file, frame).ir;
+      const used = new Set();
+      (function walk(n) {
+        for (const t of [n.style?.fillToken, n.style?.borderToken, n.text?.colorToken]) if (t) used.add(t);
+        for (const p of n.asset?.paths ?? []) if (p.fillToken) used.add(p.fillToken);
+        n.children?.forEach(walk);
+      })(ir);
+      variables = variables.filter((v) => used.has(v.name));
+      css = undefined;
+    }
+
+    // the whole catalogue runs to 159KB on this file; the same budget applies here
+    const out = { sets, variables, ...(css ? { css } : {}) };
+    if (serialize(out).length <= BUDGET) return out;
+
+    const listing = variables.map((v) => ({ name: v.name, token: v.token, type: v.type, set: v.set }));
+    const lean = { sets, variables: listing };
+    if (serialize(lean).length <= BUDGET) {
+      return { ...lean, truncated: `values omitted — narrow with \`set\` or \`frame\` to get them` };
+    }
+    // still too many to even name: keep the sets, which is what a caller narrows by
     return {
-      sets: all.sets.filter((s) => s.name.toLowerCase().includes(match)),
-      variables: all.variables.filter((v) => v.set?.toLowerCase().includes(match)),
+      sets,
+      variables: listing.slice(0, 100),
+      truncated: `${listing.length} variables in ${sets.length} sets — showing 100; narrow with \`set\` or \`frame\``,
     };
   }),
 );

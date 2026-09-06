@@ -58,7 +58,7 @@ them, so they are treated as untrusted.
 | `get_html` | The baseline render, for comparison. |
 | `export_assets` | Raster fills as `.png`, collapsed icon clusters as `.svg`. |
 | `get_tokens` | The colours and text styles one frame actually uses, named. |
-| `get_variables` | The design system's declared variables — sets, modes, aliases. |
+| `get_variables` | The design system's declared variables — sets, modes, aliases. Narrow with `set` or `frame`. |
 
 Large frames come back truncated with a stub naming the id to pass back as `select`, so nothing
 becomes unreachable and nothing blows the context window.
@@ -83,7 +83,12 @@ the things that make markup writable:
   where it did not, inferred from geometry. Otherwise `absolute`, honestly.
 - `layout.repeat` — `{ count, like, columns, rows }` when three or more siblings share a shape.
   Twenty cards say so instead of arriving as twenty sets of coordinates.
-- `component` — which master an instance came from, with overrides already applied.
+- `layout.rows` — which children share a visual row, as indices into that node's own
+  `children`. Siblings arrive in paint order, which is not reading order.
+- `label` — the text a painted box contains, when it contains exactly one: a button,
+  a tab, a chip, without having to work out which sibling sits inside which.
+- `component` — which master an instance came from, with overrides applied and, where
+  the component set declares them, `variant` (`{ State: 'Hover', Size: 'Large' }`).
 - `style.fillToken` / `text.colorToken` — the design variable a colour was bound to.
 - `bounds` — a rotated node's real footprint, alongside its untransformed `box`.
 

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, symlinkSync, copyFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 const SAMPLE = 'samples/kyowon-full.fig';
 const FRAME = '온라인학습_Login';
@@ -164,8 +165,19 @@ if (existsSync(LIBRARY)) {
   const tokens = json(await call('get_tokens', { file: LIBRARY, frame: tag.id }));
   assert.ok(tokens.colors.some((c) => c.authored), 'no colour reached the server with its authored name');
 
+  // 581 variables is 159KB unabridged, so the catalogue answers within the same
+  // budget as everything else and says how to narrow it
   const vars = json(await call('get_variables', { file: LIBRARY }));
-  assert.ok(vars.variables.length > 500, `variable catalogue did not load: ${vars.variables.length}`);
+  assert.ok(vars.sets.length > 10, `sets missing from the catalogue: ${vars.sets.length}`);
+  assert.ok(vars.truncated, 'the whole catalogue came back unabridged');
+  const scoped = json(await call('get_variables', { file: LIBRARY, set: 'Size' }));
+  assert.ok(scoped.variables.length > 10, `narrowing by set returned ${scoped.variables.length}`);
+  assert.ok(scoped.variables.some((v) => v.values), 'narrowed variables came back without their values');
+
+  // scoping to a frame answers with what that frame actually binds
+  const tagVars = json(await call('get_variables', { file: LIBRARY, frame: tag.id }));
+  assert.ok(tagVars.variables.length > 0 && tagVars.variables.length < 50,
+    `frame scoping returned ${tagVars.variables.length} variables`);
 }
 
 const escaped = await call('get_frame', { file: '../../../etc/hosts', frame: 'x' });
@@ -175,6 +187,34 @@ assert.match(escaped.content[0].text, /escapes FIG_ROOT/);
 const missing = await call('get_frame', { file: SAMPLE, frame: 'no-such-frame' });
 assert.equal(missing.isError, true);
 assert.match(missing.content[0].text, /frame not found/);
+// nineteen frames in the design system have no name, so a list of names alone
+// answers a failed lookup with a row of blanks
+assert.match(missing.content[0].text, /\d+:\d+/, 'the error names no id to retry with');
+
+// A path is not an identity. The server caches a parsed document, and the file
+// behind the path can be replaced while it runs.
+mkdirSync('out', { recursive: true });
+copyFileSync(SAMPLE, 'out/swap.fig');
+const before = json(await call('list_frames', { file: 'out/swap.fig' })).length;
+if (existsSync(LIBRARY)) {
+  await new Promise((r) => setTimeout(r, 10));
+  copyFileSync(LIBRARY, 'out/swap.fig');
+  const after = json(await call('list_frames', { file: 'out/swap.fig' })).length;
+  assert.notEqual(after, before, `the cache served ${before} frames from a file that had been replaced`);
+}
+
+// A symlink inside FIG_ROOT points wherever it likes and never contains `..`, so
+// comparing resolved strings lets it through. `out/` is gitignored, which makes it
+// the one place a test may leave a link behind.
+mkdirSync('out', { recursive: true });
+try { symlinkSync(tmpdir(), 'out/escape-probe'); } catch { /* already there */ }
+for (const target of ['out/escape-probe/anything.fig', 'out/escape-probe']) {
+  const viaLink = await call('get_frame', { file: target, frame: 'x' });
+  assert.equal(viaLink.isError, true, `a symlink got out of FIG_ROOT: ${target}`);
+  assert.match(viaLink.content[0].text, /escapes FIG_ROOT/, `wrong refusal for ${target}`);
+}
+const viaLinkWrite = await call('export_assets', { file: SAMPLE, frame: FRAME, outDir: 'out/escape-probe/pwn' });
+assert.equal(viaLinkWrite.isError, true, 'a symlink got out of FIG_ROOT for writing');
 
 proc.kill();
 console.log(`ok — ${tools.length} tools, ${frames.length} frames, IR ${full.content[0].text.length} B ` +
