@@ -364,6 +364,43 @@ function flexChild(node) {
 }
 
 /**
+ * Sibling order is paint order, not reading order: a hand-drawn table's cells arrive
+ * shuffled, and nothing says which of them share a row. Band the children by vertical
+ * overlap and report the bands, left to right, top to bottom.
+ *
+ * This is a hint and nothing more — reordering the children would change what paints
+ * over what, so the tree is left exactly as it is. Each row is a space-separated list
+ * of indices into this node's own `children`, which stays small where a list of ids
+ * would dominate the payload.
+ */
+function rowBands(kids) {
+  const flow = kids.filter((k) => k.role !== 'backdrop' && k.box.h > 0);
+  if (flow.length < 4) return undefined;
+
+  const bands = [];
+  for (const k of [...flow].sort((a, b) => a.box.y - b.box.y || a.box.x - b.box.x)) {
+    const band = bands.at(-1);
+    const shared = band && Math.min(band.bottom, k.box.y + k.box.h) - Math.max(band.top, k.box.y);
+    // a cell joins the row it mostly sits in, so a tall element cannot swallow the page
+    if (band && shared > Math.min(band.bottom - band.top, k.box.h) * 0.5) {
+      band.items.push(k);
+      band.top = Math.min(band.top, k.box.y);
+      band.bottom = Math.max(band.bottom, k.box.y + k.box.h);
+    } else {
+      bands.push({ top: k.box.y, bottom: k.box.y + k.box.h, items: [k] });
+    }
+  }
+
+  // one item per band is just reading order; that is only worth saying when the
+  // children arrive out of order in the first place
+  const shuffled = flow.some((k, i) => i > 0 && k.box.y < flow[i - 1].box.y - 1);
+  if (bands.length < 2 || (!bands.some((b) => b.items.length > 1) && !shuffled)) return undefined;
+
+  const index = new Map(kids.map((k, i) => [k, i]));
+  return bands.map((b) => b.items.sort((x, y) => x.box.x - y.box.x).map((k) => index.get(k)).join(' '));
+}
+
+/**
  * Figma files drawn by hand leave a button's background and its label as siblings:
  * nothing in the tree says the text belongs to the box under it. Rebuild that
  * nesting from geometry — a painted shape adopts the later-drawn siblings it fully
@@ -408,7 +445,17 @@ function nestByContainment(kids) {
     host.children.push({ ...child, box: { ...child.box, x: round(child.box.x - host.box.x), y: round(child.box.y - host.box.y) } });
     adoptedBy.set(child, host);
   }
-  return adoptedBy.size ? kids.filter((k) => !adoptedBy.has(k)) : kids;
+  if (!adoptedBy.size) return kids;
+
+  // a host's layout was inferred before it had any children, so its hints are stale.
+  // Only the hints are refreshed: these are painted shapes whose contents the
+  // designer placed by hand, and calling that flex would be a guess.
+  for (const host of new Set(adoptedBy.values())) {
+    const repeat = repeatHint(host.children.filter((k) => k.role !== 'backdrop'));
+    const rows = rowBands(host.children);
+    host.layout = { mode: 'absolute', ...(repeat ? { repeat } : {}), ...(rows ? { rows } : {}) };
+  }
+  return kids.filter((k) => !adoptedBy.has(k));
 }
 
 /**
@@ -529,7 +576,8 @@ function inferLayout(node, kids) {
       repeat,
     };
   }
-  return repeat ? { mode: 'absolute', repeat } : { mode: 'absolute' };
+  const rows = rowBands(flow);
+  return { mode: 'absolute', ...(repeat ? { repeat } : {}), ...(rows ? { rows } : {}) };
 }
 
 const guidKey = (g) => `${g.sessionID}:${g.localID}`;

@@ -145,6 +145,30 @@ const sizes = new Set(column.children.map((c) => `${c.box.w}x${c.box.h}`));
 assert.equal(sizes.size, 1, 'repeat claimed for children of differing sizes');
 assert.ok(!flat.some((n) => n.layout?.repeat), 'login frame has no list, but one was inferred');
 
+// --- rows: sibling order is paint order, so reading order needs saying ---
+const tableFrame = canvas.children.find((c) => c.id === '2097:1156');
+const tableIR = toIR(tableFrame, message.blobs);
+const body = tableIR.children.find((c) => c.name === 'Rectangle 25');
+assert.ok(body?.layout.rows?.length >= 10, `expected the table body to band into rows, got ${body?.layout.rows?.length}`);
+
+const rowOf = (row) => row.split(' ').map((i) => body.children[Number(i)]);
+assert.ok(body.layout.rows.every((r) => rowOf(r).every(Boolean)), 'a row index points past the children');
+// every row mixes columns, and the first four are the cells a table needs
+const first = rowOf(body.layout.rows[0]);
+assert.ok(first.filter((n) => n.role === 'text').length >= 4, 'a table row came back without its cells');
+assert.deepEqual(
+  first.filter((n) => n.role === 'text').map((n) => n.box.x).slice(0, 4),
+  [...first.filter((n) => n.role === 'text').map((n) => n.box.x).slice(0, 4)].sort((a, b) => a - b),
+  'cells within a row are not left to right',
+);
+// bands themselves run down the page even though the children do not
+const tops = body.layout.rows.map((r) => Math.min(...rowOf(r).map((n) => n.box.y)));
+assert.deepEqual(tops, [...tops].sort((a, b) => a - b), 'rows are not top to bottom');
+const shuffled = body.children.some((c, i) => i > 0 && c.box.y < body.children[i - 1].box.y - 1);
+assert.ok(shuffled, 'this frame no longer exercises out-of-order children');
+// the hint must stay a hint: it may not reorder or renest anything
+assert.equal(renderHTML(tableIR), renderHTML(toIR(tableFrame, message.blobs)), 'row hints changed the render');
+
 // --- gradients are tokens too ---
 const archiveTokens = extractTokens(nestedIR);
 const gradients = archiveTokens.colors.filter((c) => c.name.startsWith('--gradient'));
