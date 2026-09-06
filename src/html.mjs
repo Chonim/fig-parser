@@ -7,6 +7,22 @@ const backgroundFit = (mode) => {
   return [['background-size', size], ['background-position', 'center'], ['background-repeat', 'no-repeat']];
 };
 
+/** mixed-format text becomes spans carrying only what differs from the node's own style */
+const RUN_CSS = { size: (v) => `font-size:${v}px`, weight: (v) => `font-weight:${v}`, family: (v) => `font-family:"${v}"`, color: (v) => `color:${v}` };
+
+function textBody(text) {
+  if (!text.runs) return esc(text.content);
+  return text.runs
+    .map((run) => {
+      const style = Object.entries(RUN_CSS)
+        .filter(([k]) => run[k] !== undefined)
+        .map(([k, fn]) => fn(run[k]))
+        .join(';');
+      return style ? `<span style="${style}">${esc(run.text)}</span>` : esc(run.text);
+    })
+    .join('');
+}
+
 const OBJECT_FIT = { FIT: 'contain', STRETCH: 'fill', TILE: 'none' };
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -65,7 +81,15 @@ function styleRules(node, parentLayout, assetUrl) {
     if (t.lineHeight) rules.push(['line-height', String(t.lineHeight)]);
     if (t.letterSpacing) rules.push(['letter-spacing', t.letterSpacing]);
     if (t.align !== 'left') rules.push(['text-align', t.align]);
-    rules.push(['white-space', 'pre-wrap']);
+    if (t.textCase) rules.push(['text-transform', t.textCase]);
+    if (t.decoration) rules.push(['text-decoration', t.decoration]);
+    // a flex container with only text still aligns that text as one anonymous item,
+    // but text-align no longer positions it, so mirror it onto the main axis
+    if (t.verticalAlign) {
+      rules.push(['display', 'flex'], ['align-items', t.verticalAlign]);
+      if (t.align !== 'left') rules.push(['justify-content', t.align === 'right' ? 'flex-end' : t.align]);
+    }
+    rules.push(['white-space', t.nowrap ? 'pre' : 'pre-wrap']);
   }
 
   const l = node.layout;
@@ -82,9 +106,20 @@ function styleRules(node, parentLayout, assetUrl) {
   return rules;
 }
 
+const FONT_LINKS = {
+  Pretendard: 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css',
+  'Noto Sans KR': 'https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&display=swap',
+};
+
 export function renderHTML(root, { assetUrl = (h) => `assets/${h}.png`, title = root.name } = {}) {
   const sheet = [];
   const seen = new Map();
+  const families = new Set();
+  (function collectFonts(n) {
+    if (n.text?.family) families.add(n.text.family);
+    for (const run of n.text?.runs ?? []) if (run.family) families.add(run.family);
+    n.children?.forEach(collectFonts);
+  })(root);
 
   const walk = (node, parentLayout, depth) => {
     const cls = className(node, seen);
@@ -92,7 +127,7 @@ export function renderHTML(root, { assetUrl = (h) => `assets/${h}.png`, title = 
     sheet.push(`.${cls} {\n${rules.map(([k, v]) => `  ${k}: ${v};`).join('\n')}\n}`);
     const pad = '  '.repeat(depth + 2);
 
-    if (node.role === 'text') return `${pad}<p class="${cls}">${esc(node.text.content)}</p>`;
+    if (node.role === 'text') return `${pad}<p class="${cls}">${textBody(node.text)}</p>`;
     if (node.role === 'image') return `${pad}<img class="${cls}" src="${assetUrl(node.asset.hash)}" alt="${esc(node.name)}">`;
     if (node.role === 'icon') {
       const defs = node.asset.defs ? `<defs>${node.asset.defs.join('')}</defs>` : '';
@@ -112,7 +147,7 @@ export function renderHTML(root, { assetUrl = (h) => `assets/${h}.png`, title = 
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+${[...families].map((f) => FONT_LINKS[f]).filter(Boolean).map((href) => `<link rel="stylesheet" href="${href}">`).join('\n')}
 <style>
 * { margin: 0; padding: 0; }
 body { background: #f4f4f4; display: flex; justify-content: center; }

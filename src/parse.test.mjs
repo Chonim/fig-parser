@@ -65,6 +65,23 @@ const label = byRole('text').find((n) => n.text.content === '로그인');
 assert.equal(label.text.weight, 600, 'SemiBold should map to 600');
 assert.match(label.text.color, /^#[0-9a-f]{6}$/);
 
+// --- mixed-format text ---
+const lq = canvas.children.find((c) => c.name === '온라인학습_LEARNING QUEST');
+const lqIR = toIR(lq, message.blobs);
+const lqText = [];
+(function walk(n) { if (n.role === 'text') lqText.push(n); n.children?.forEach(walk); })(lqIR);
+
+const percent = lqText.find((n) => n.text.content === '58%');
+assert.deepEqual(percent.text.runs.map((r) => r.text), ['58', '%'], 'mixed run was flattened');
+assert.ok(percent.text.runs[0].size > percent.text.runs[1].size, 'run font sizes lost');
+// runs only carry what differs from the node style, so a uniform node has none
+assert.ok(lqText.some((n) => !n.text.runs), 'every text node claims mixed formatting');
+assert.ok(lqText.some((n) => n.text.verticalAlign === 'center'), 'vertical centring not detected');
+
+const html5 = renderHTML(lqIR);
+assert.ok(html5.includes('<span style="font-size:40px">58</span>'), 'run span not rendered');
+assert.ok(html5.includes('Noto+Sans+KR'), 'font actually used was never linked');
+
 // --- transforms ---
 // ARCHIVE carries rotated carets; identity nodes must stay untouched so that
 // adding transform support cannot silently reflow everything else

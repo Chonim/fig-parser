@@ -178,6 +178,47 @@ function radius(node) {
   return node.cornerRadius ? `${round(node.cornerRadius)}px` : undefined;
 }
 
+const CASE_CSS = { UPPER: 'uppercase', LOWER: 'lowercase', TITLE: 'capitalize' };
+const DECORATION_CSS = { UNDERLINE: 'underline', STRIKETHROUGH: 'line-through' };
+
+const weightOf = (font) => WEIGHTS[font?.style?.replace(/\s|Italic/g, '')] ?? 400;
+
+/**
+ * A TEXT node can mix styles: characterStyleIDs assigns every character an entry in
+ * styleOverrideTable (id 0 meaning the node's own style). Group runs of equal id so
+ * the renderer can emit one span each instead of flattening the whole string.
+ *
+ * Indices are UTF-16 code units, so split('') rather than [...] keeps them aligned;
+ * surrogate halves always share a style, so pairs survive the regrouping intact.
+ */
+function textRuns(node, base) {
+  const { characters, characterStyleIDs = [], styleOverrideTable = [] } = node.textData;
+  if (!styleOverrideTable.length) return undefined;
+  const table = new Map(styleOverrideTable.map((o) => [o.styleID, o]));
+
+  const runs = [];
+  characters.split('').forEach((ch, i) => {
+    const styleID = characterStyleIDs[i] ?? 0;
+    const last = runs.at(-1);
+    if (last?.styleID === styleID) last.text += ch;
+    else runs.push({ styleID, text: ch });
+  });
+  if (runs.length < 2) return undefined;
+
+  return runs.map(({ styleID, text }) => {
+    const o = table.get(styleID);
+    const run = { text };
+    if (o?.fontSize && round(o.fontSize) !== base.size) run.size = round(o.fontSize);
+    if (o?.fontName) {
+      if (o.fontName.family !== base.family) run.family = o.fontName.family;
+      if (weightOf(o.fontName) !== base.weight) run.weight = weightOf(o.fontName);
+    }
+    const color = o?.fillPaints && solidFill({ fillPaints: o.fillPaints });
+    if (color && color !== base.color) run.color = color;
+    return run;
+  });
+}
+
 function textStyle(node) {
   const lh = node.lineHeight;
   // PERCENT/RAW are both relative to font size; PIXELS is absolute.
@@ -190,12 +231,18 @@ function textStyle(node) {
     content: node.textData.characters,
     family: node.fontName?.family,
     size: round(node.fontSize ?? 16),
-    weight: WEIGHTS[node.fontName?.style?.replace(/\s|Italic/g, '')] ?? 400,
+    weight: weightOf(node.fontName),
     italic: /Italic/.test(node.fontName?.style ?? '') || undefined,
     lineHeight,
     letterSpacing: ls?.value ? (ls.units === 'PERCENT' ? `${round(ls.value / 100)}em` : `${round(ls.value)}px`) : undefined,
     color: solidFill(node) ?? '#000000',
     align: (node.textAlignHorizontal ?? 'LEFT').toLowerCase(),
+    verticalAlign: node.textAlignVertical === 'CENTER' ? 'center' : node.textAlignVertical === 'BOTTOM' ? 'flex-end' : undefined,
+    // WIDTH_AND_HEIGHT means the box was sized to hug one line; letting it wrap
+    // would reflow text Figma never wrapped
+    nowrap: node.textAutoResize === 'WIDTH_AND_HEIGHT' || undefined,
+    textCase: CASE_CSS[node.textCase],
+    decoration: DECORATION_CSS[node.textDecoration],
   };
 }
 
@@ -342,7 +389,10 @@ export function toIR(node, blobs, isRoot = true) {
   if (node.visible === false) return null;
 
   if (node.textData) {
-    return { ...base, role: 'text', text: textStyle(node), style: { opacity: node.opacity ?? 1 }, children: [] };
+    const text = textStyle(node);
+    const runs = textRuns(node, text);
+    if (runs) text.runs = runs;
+    return { ...base, role: 'text', text, style: { opacity: node.opacity ?? 1 }, children: [] };
   }
 
   if (isIconCluster(node)) {
