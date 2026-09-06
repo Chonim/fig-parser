@@ -80,6 +80,8 @@ census에 남은 행은 둘 다 의도적이다: 벡터 네트워크 blob(참조
 
 ## 알려진 잔여 결함
 
+- **정답지가 없다** — Figma가 실제로 그리는 화면과 대조할 이미지가 없어서, 판정은 불변식과
+  자동 검사와 육안뿐이다. 픽셀 단위로 "전수"를 주장하려면 프레임별 PNG 내보내기가 필요하다
 - **`get_frame` 텍스트 도달률** — 한 번 호출로 kyowon 86/211, matsq 871/1616.
   예산이 30KB인 한 큰 프레임은 전부 담을 수 없고, 나머지는 `select`로 도달 가능하다.
   matsq 3개 프레임은 여전히 예산의 절반 미만만 쓴다(너비 우선 배분이 넓은 부모에서 보수적)
@@ -91,6 +93,38 @@ census에 남은 행은 둘 다 의도적이다: 벡터 네트워크 blob(참조
 - **회전 노드의 flow 배치** — 흐름이 놓은 노드는 중심을 축으로 돌린다. 180°는 발자국이
   같아 정확하지만, 임의 각도는 Figma가 잡은 발자국과 어긋난다. 두 샘플의 임의 각도는
   `rotate(0.91deg)` 하나뿐이라 그 차이를 볼 수 있는 케이스가 없다
+
+## matsq가 실제로 쓰는 기능 (전수)
+
+97프레임 전부 렌더해 브라우저에서 자동 검사한 뒤 정리한 것.
+
+```
+paint        SOLID 4390  IMAGE 43  (그라디언트 0)
+effect       DROP_SHADOW 119  INNER_SHADOW 3
+blend        MULTIPLY 9
+imageScale   FILL 29  STRETCH 7  FIT 3  TILE 4
+strokeAlign  INSIDE 4144  OUTSIDE 1673  CENTER 788
+autoResize   WIDTH_AND_HEIGHT 1369  HEIGHT 353
+truncation   ENDING 32 (전부 maxLines 1이라 line-clamp 경로)
+constraint   SCALE 730  CENTER 676  MAX 15  STRETCH 13
+stack        HORIZONTAL 1138  VERTICAL 525   stackWrap 0
+sizing       hug(counter) 1173  fixed(primary) 623
+interactions SWAP_STATE 258  OVERLAY 10   (화면 이동 링크 0)
+다중 fill 0  다중 stroke 0  mask 0
+```
+
+TILE은 `background-repeat: repeat`로, truncation은 line-clamp로 이미 처리됨.
+인터랙션은 전부 컴포넌트 variant 교체나 컴포넌트 마스터를 가리켜 페이지 이동이 아니다 —
+디자인 시스템이라 플로우가 없다.
+
+### 브라우저 자동 검사 결과 (109프레임)
+
+깨진 이미지 0 · 텍스트 박스 넘침 0 · 프레임 밖 요소 0 ·
+클립에 잘리는 요소는 kyowon 9건뿐이고 전부 진짜 마스크(의도된 크롭).
+0 크기 요소 1건은 폭 0으로 저작된 spacer.
+
+검사 항목은 지금까지 실제로 나온 실패 유형을 코드로 옮긴 것이다. **짜 넣지 않은 유형은
+여전히 안 잡힌다** — 3px 링 잘림이 스크린샷 12장을 그냥 통과했던 것처럼.
 
 ## kyowon-full이 실제로 쓰는 기능 (전수)
 

@@ -91,6 +91,12 @@ These are pinned by tests. A red suite is usually one of these, not new code.
    test on `node.type` alone treats all 521 of one file's groups as frames. Groups size themselves
    to their contents instead of cropping them: clipping them cut every OUTSIDE stroke, glow and
    shadow at the child's own edge — the tool buttons lost the right side of their white ring.
+10. **`textAutoResize` names axes Figma derives, and the box on them is a cache that is wrong in
+    both directions.** An instance that overrides its label to 16px Inter keeps the master's
+    29×14 slot; the Intro - 01 headline is 128px type in a 62px box; other boxes sit far larger
+    than their text. Figma's number was measured with the real font, so it stays —
+    `min-width`/`min-height: max-content` on the derived axes only stops the box being smaller
+    than what it holds. Replacing it with `max-content` outright shrank one label 128px → 37px.
 
 ## Working rules
 
