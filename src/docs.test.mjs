@@ -66,6 +66,7 @@ const COMMANDS = [
   ['node', 'src/census.mjs'],
   ['node', 'src/reach.mjs'],
   ['node', 'src/diff.mjs'],
+  ['node', 'src/slice-refs.mjs'],
   ['node', 'src/dogfood.mjs'],
   ['node', 'src/worked-pass.mjs'],
 ];

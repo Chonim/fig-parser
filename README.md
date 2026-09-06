@@ -35,6 +35,7 @@ pnpm test                     # parse + components + mcp suites, in that order
 pnpm census [file.fig]        # what the IR layer drops or approximates on a file
 pnpm reach  [file.fig]        # how much of each frame one get_frame call delivers
 pnpm diff   [file.fig]        # pixel comparison against refs/ — see REFS.md
+pnpm refs:slice <page.png>    # cut one page-wide Figma export into refs/<sample>/
 pnpm dogfood                  # the tool-call count find_nodes saves, re-measured
 ```
 
@@ -180,13 +181,15 @@ is the source artboard, and dividing by it shrinks icons to a sub-pixel speck.
 Radial gradients, stacked fills and wrap-grid inference are unimplemented: none of the sample
 files exercises them, and untested rendering code is worse than an honest gap. Constraints and
 centred stroke alignment are reported in the IR but not turned into CSS — both move things on
-screen, and there is no reference image here to say whether the result would be right.
+screen, and neither has been checked against a reference yet.
 `layout.hug` no longer pins a box to its measured size; that measurement is a floor now, so a
 longer string grows the box rather than spilling out of it.
 
-Nothing here has been compared against Figma's own output. `pnpm diff` does that comparison and
-`REFS.md` says which frames to export and how; until those images exist, every check in this
-repo agrees with the render it is looking at.
+Every other check here agrees with the render it is looking at; only `pnpm diff` can say the
+render is wrong, by comparing it to Figma's own export. `REFS.md` says how to get those images
+in — one page-wide PNG through `pnpm refs:slice` is enough. kyowon-full's 12 frames are covered,
+and `TASKS.md` has what that comparison found: one full screen matches to 0.146%, and the frames
+that do not are each wrong in one identified place.
 
 Run `pnpm census <file.fig>` against your own file to see what this drops on it. Rows marked
 `deliberate` are accounted for — duplicate vector-network blobs, invisible nodes, and variables

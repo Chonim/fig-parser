@@ -35,6 +35,8 @@ export const HANDLED = {
   effects: { handled: new Set(['DROP_SHADOW', 'INNER_SHADOW']), approximated: new Set() },
   blendModes: new Set(['NORMAL', 'PASS_THROUGH']),
   imageScaleModes: new Set(['FILL', 'FIT', 'STRETCH', 'TILE']),
+  // an axis-aligned crop becomes a rectangle of the image; a rotated one cannot
+  imageCropAxisAligned: true,
   // variableConsumptionMap fields the IR reports as tokens; the corner and edge
   // variants beyond the first are the same value in this file and would only repeat
   consumedFields: new Set([
@@ -159,9 +161,29 @@ const fillOf = (node) => {
   return paint && paintCss(paint, node.size);
 };
 
+/**
+ * The rectangle of the image the node actually shows, in normalized image coordinates.
+ *
+ * Figma's "Crop" is `imageScaleMode: STRETCH` plus a paint transform, and the transform
+ * is the whole of it — every STRETCH paint in both samples carries a non-identity one,
+ * so reading the mode and dropping the matrix stretched a cropped photo back to its full
+ * width. Every such matrix here is axis-aligned; a rotated crop would need more than a
+ * rectangle and is not attempted.
+ */
+function imageCrop(paint) {
+  const t = paint.transform;
+  if (!t || Math.abs(t.m01) > 1e-6 || Math.abs(t.m10) > 1e-6) return undefined;
+  const [w, h, x, y] = [t.m00 ?? 1, t.m11 ?? 1, t.m02 ?? 0, t.m12 ?? 0];
+  if (Math.abs(w - 1) < 1e-6 && Math.abs(h - 1) < 1e-6 && Math.abs(x) < 1e-6 && Math.abs(y) < 1e-6) return undefined;
+  const r = (v) => Math.round(v * 1e4) / 1e4;
+  return { x: r(x), y: r(y), w: r(w), h: r(h) };
+}
+
 function imageFill(node) {
   const paint = node.fillPaints?.find((p) => p.visible !== false && p.type === 'IMAGE' && p.image?.hash);
-  return paint && { hash: hashHex(paint.image.hash), scaleMode: paint.imageScaleMode ?? 'FILL' };
+  if (!paint) return undefined;
+  const crop = imageCrop(paint);
+  return { hash: hashHex(paint.image.hash), scaleMode: paint.imageScaleMode ?? 'FILL', ...(crop ? { crop } : {}) };
 }
 
 function border(node) {

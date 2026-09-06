@@ -1,7 +1,22 @@
 import { asImageLayer } from './ir.mjs';
 
-/** Figma image scale modes as CSS background sizing */
-const backgroundFit = (mode) => {
+/**
+ * Figma image scale modes as CSS background sizing.
+ *
+ * A crop is the rectangle of the image that fills the box, so the image is drawn
+ * `1/w` times the box wide and offset by the usual percentage rule — a fraction of the
+ * overhang, not of the box. With no overhang on an axis there is nothing to offset.
+ */
+const pct = (v) => `${Math.round(v * 1e4) / 100}%`;
+const backgroundFit = (mode, crop) => {
+  if (crop) {
+    const off = (t, s) => (s >= 1 ? '0%' : pct(t / (1 - s)));
+    return [
+      ['background-size', `${pct(1 / crop.w)} ${pct(1 / crop.h)}`],
+      ['background-position', `${off(crop.x, crop.w)} ${off(crop.y, crop.h)}`],
+      ['background-repeat', 'no-repeat'],
+    ];
+  }
   if (mode === 'TILE') return [['background-repeat', 'repeat']];
   const size = { FIT: 'contain', STRETCH: '100% 100%' }[mode] ?? 'cover';
   return [['background-size', size], ['background-position', 'center'], ['background-repeat', 'no-repeat']];
@@ -100,7 +115,7 @@ function styleRules(node, parentLayout, assetUrl) {
   const s = node.style ?? {};
   if (s.fill && !s.border?.image) rules.push(['background', s.fill]);
   if (node.asset?.kind === 'image' && node.role !== 'image') {
-    rules.push(['background-image', `url(${assetUrl(node.asset.hash)})`], ...backgroundFit(node.asset.scaleMode));
+    rules.push(['background-image', `url(${assetUrl(node.asset.hash)})`], ...backgroundFit(node.asset.scaleMode, node.asset.crop));
   }
   if (s.radius) rules.push(['border-radius', s.radius]);
   if (s.border?.css) {
@@ -136,7 +151,15 @@ function styleRules(node, parentLayout, assetUrl) {
   if (node.flexChild?.grow) rules.push(['flex-grow', String(node.flexChild.grow)]);
 
   if (node.role === 'image') {
-    rules.push(['object-fit', OBJECT_FIT[node.asset.scaleMode] ?? 'cover']);
+    // object-view-box names the source rectangle, which object-fit alone cannot; it is
+    // Chrome-only, and this render is checked in Chrome
+    if (node.asset.crop) {
+      const c = node.asset.crop;
+      rules.push(['object-view-box', `inset(${pct(c.y)} ${pct(1 - c.x - c.w)} ${pct(1 - c.y - c.h)} ${pct(c.x)})`],
+        ['object-fit', 'fill']);
+    } else {
+      rules.push(['object-fit', OBJECT_FIT[node.asset.scaleMode] ?? 'cover']);
+    }
   }
 
   if (node.role === 'text') {

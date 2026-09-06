@@ -514,6 +514,18 @@ for (const frame of collectFrames(roots)) {
   assert.equal(repeated.length, 0, `class selectors emitted twice in ${frame.name}: ${repeated.slice(0, 3)}`);
 }
 
+// --- an image crop is the paint transform, not the scale mode ---
+// Figma's "Crop" is `imageScaleMode: STRETCH` plus a transform, and reading the mode
+// while dropping the matrix stretched a cropped photo back to its full width. Every
+// STRETCH paint in this file carries a non-identity transform, so the mode alone says
+// nothing. This checks the one whose crop is visible at a glance: the My Room photo,
+// cropped to the middle 81% of its width.
+const myPageHTML = renderHTML(myPageIR);
+assert.match(myPageHTML, /object-view-box: inset\(0% 9\.4[0-9]% 0% 9\.4[0-9]%\)/,
+  'the image crop is gone — a STRETCH paint transform is being read as no crop');
+assert.equal((myPageHTML.match(/object-view-box[^;]*inset\(0% 0% 0% 0%\)/g) ?? []).length, 0,
+  'an identity paint transform is being written out as a crop');
+
 const openDivs = (html.match(/<div/g) ?? []).length;
 assert.equal(openDivs, (html.match(/<\/div>/g) ?? []).length, 'unbalanced divs');
 

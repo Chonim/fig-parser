@@ -120,6 +120,11 @@ for (const frame of frames) {
     if (image && image.imageScaleMode && !HANDLED.imageScaleModes.has(image.imageScaleMode)) {
       bump(`image scaleMode ${image.imageScaleMode} — always rendered as cover`);
     }
+    // a crop is a rectangle of the image, which a rotating paint transform is not
+    if (HANDLED.imageCropAxisAligned && image?.transform
+        && (Math.abs(image.transform.m01) > 1e-6 || Math.abs(image.transform.m10) > 1e-6)) {
+      bump('rotated image crop — only the axis-aligned part is kept');
+    }
 
     // a mask whose shape is not simply the parent's box still has no representation
     if (node.mask && !maskFitsParent.has(node)) bump('mask with a shape of its own — not clipped');

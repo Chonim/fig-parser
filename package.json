@@ -7,6 +7,7 @@
     "census": "node src/census.mjs",
     "reach": "node src/reach.mjs",
     "diff": "node src/diff.mjs",
+    "refs:slice": "node src/slice-refs.mjs",
     "dogfood": "node src/dogfood.mjs",
     "docs:worked": "node src/worked-pass.mjs --write",
     "docs:check": "node src/docs-check.mjs"

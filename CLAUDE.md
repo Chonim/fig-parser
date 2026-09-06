@@ -32,10 +32,11 @@ the skip into an exit 1, since a skip and a pass look identical to anything read
 - `samples/kyowon-full.fig` — a product design: no auto-layout, no components, heavy vector art
 - `samples/matsq.fig` — a design system: symbols, instances, auto-layout, variables, sections
 
-`refs/<sample>/<frameId>.png` holds Figma's own 2x export of a frame, and `pnpm diff` compares
-the render to it. `REFS.md` says which frames to export and why those. Nothing in this repo has
-ever been checked against Figma's actual output; every other check here agrees with the render
-it is looking at.
+`refs/<sample>/<frameId>.png` holds Figma's own export of a frame, and `pnpm diff` compares the
+render to it at whatever scale that PNG is. `pnpm refs:slice <page export.png>` cuts one
+canvas-wide export into those files; `REFS.md` has both routes. Every other check here agrees
+with the render it is looking at, so this is the only one that can say the render is wrong —
+kyowon-full's 12 frames have it, and `TASKS.md` carries the numbers.
 
 The two exercise disjoint code paths. A change verified against one is not verified.
 

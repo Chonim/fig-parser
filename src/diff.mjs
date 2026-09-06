@@ -30,7 +30,9 @@ import { BOTH, requireSamples } from './samples.mjs';
 import { toIR, symbolIndex, variableIndex } from './ir.mjs';
 import { renderHTML } from './html.mjs';
 
-const SCALE = 2;
+// The reference decides the scale: a frame exported at 1x and one at 2x are both
+// usable, but shooting at the wrong one only ever reports a size mismatch.
+const DEFAULT_SCALE = 2;
 // pixelmatch's own default. Named here because a threshold that drifts turns "the
 // render changed" into "someone widened the tolerance".
 const THRESHOLD = 0.1;
@@ -52,17 +54,17 @@ const refPath = (file, id) => join(refDir(file), `${id.replace(/:/g, '-')}.png`)
  * that says nothing about this code. Shooting the same frame with the links stripped
  * answers it: if that changes nothing, the fonts were never there.
  */
-function webfontsApplied(html, w, h, dir) {
+function webfontsApplied(html, w, h, dir, scale) {
   const linked = /<link rel="stylesheet"/.test(html);
   if (!linked) return { linked: false, applied: false };
-  const withFonts = shoot(html, w, h, dir);
-  const without = shoot(html.replace(/<link rel="stylesheet"[^>]*>/g, ''), w, h, dir);
+  const withFonts = shoot(html, w, h, dir, scale);
+  const without = shoot(html.replace(/<link rel="stylesheet"[^>]*>/g, ''), w, h, dir, scale);
   const out = new PNG({ width: withFonts.width, height: withFonts.height });
   const bad = pixelmatch(withFonts.data, without.data, out.data, withFonts.width, withFonts.height, { threshold: THRESHOLD });
   return { linked: true, applied: bad > 0 };
 }
 
-function shoot(html, w, h, dir) {
+function shoot(html, w, h, dir, scale = DEFAULT_SCALE) {
   const page = join(dir, 'page.html');
   const shot = join(dir, 'shot.png');
   writeFileSync(page, html);
@@ -72,14 +74,14 @@ function shoot(html, w, h, dir) {
     // glyph is a fallback: removing the font links changed nothing until it was set
     '--virtual-time-budget=8000',
     `--screenshot=${shot}`, `--window-size=${Math.round(w)},${Math.round(h)}`,
-    `--force-device-scale-factor=${SCALE}`, '--default-background-color=00000000',
+    `--force-device-scale-factor=${scale}`, '--default-background-color=00000000',
     `file://${resolve(page)}`,
   ], { stdio: ['ignore', 'ignore', 'ignore'] });
   return PNG.sync.read(readFileSync(shot));
 }
 
 /** where the differing pixels are, so a number points at a place on the screen */
-function bboxOf(diff, w, h) {
+function bboxOf(diff, w, h, scale = DEFAULT_SCALE) {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -91,7 +93,7 @@ function bboxOf(diff, w, h) {
       }
     }
   }
-  return x1 < 0 ? null : { x: Math.round(x0 / SCALE), y: Math.round(y0 / SCALE), w: Math.round((x1 - x0 + 1) / SCALE), h: Math.round((y1 - y0 + 1) / SCALE) };
+  return x1 < 0 ? null : { x: Math.round(x0 / scale), y: Math.round(y0 / scale), w: Math.round((x1 - x0 + 1) / scale), h: Math.round((y1 - y0 + 1) / scale) };
 }
 
 export function diffFile(file, { outDir = 'out/diff' } = {}) {
@@ -118,10 +120,11 @@ export function diffFile(file, { outDir = 'out/diff' } = {}) {
         n.children?.forEach(saveAssets);
       })(ir);
       const html = renderHTML(ir);
-      // one probe per file: it costs two more screenshots, not two per frame
-      if (!fonts) fonts = webfontsApplied(html, frame.size.x, frame.size.y, work);
-      const shot = shoot(html, frame.size.x, frame.size.y, work);
       const want = PNG.sync.read(readFileSync(ref));
+      const scale = Math.round(want.width / frame.size.x) || DEFAULT_SCALE;
+      // one probe per file: it costs two more screenshots, not two per frame
+      if (!fonts) fonts = webfontsApplied(html, frame.size.x, frame.size.y, work, scale);
+      const shot = shoot(html, frame.size.x, frame.size.y, work, scale);
       const row = { id: frame.id, name: frame.name };
       if (shot.width !== want.width || shot.height !== want.height) {
         rows.push({ ...row, sizeMismatch: `${shot.width}×${shot.height} vs ${want.width}×${want.height}` });
@@ -131,7 +134,7 @@ export function diffFile(file, { outDir = 'out/diff' } = {}) {
       const bad = pixelmatch(shot.data, want.data, out.data, shot.width, shot.height, { threshold: THRESHOLD });
       const total = shot.width * shot.height;
       if (bad > 0) writeFileSync(join(outDir, `${frame.id.replace(/:/g, '-')}.png`), PNG.sync.write(out));
-      rows.push({ ...row, bad, pct: (bad / total) * 100, bbox: bad ? bboxOf(out.data, shot.width, shot.height) : null });
+      rows.push({ ...row, bad, pct: (bad / total) * 100, scale, bbox: bad ? bboxOf(out.data, shot.width, shot.height, scale) : null });
     }
   } finally {
     rmSync(work, { recursive: true, force: true });
