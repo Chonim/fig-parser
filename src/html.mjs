@@ -216,8 +216,10 @@ export function renderHTML(root, { assetUrl = (h) => `assets/${h}.png`, title = 
         .join('');
       // Outlined strokes sit a little outside the node box they came from, and an
       // <svg> clips to its viewBox by default. The coordinate system is unscaled, so
-      // letting it overflow paints the missing edges exactly where they belong.
-      return `${pad}<svg class="${cls}"${id} viewBox="${node.asset.viewBox}" overflow="visible" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(node.name)}">${defs}${paths}</svg>`;
+      // letting it overflow paints the missing edges exactly where they belong —
+      // unless the container this cluster came from was cropping it, in which case
+      // that crop is the design and has to survive the collapse.
+      return `${pad}<svg class="${cls}"${id} viewBox="${node.asset.viewBox}" overflow="${node.style?.clip ? 'hidden' : 'visible'}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(node.name)}">${defs}${paths}</svg>`;
     }
     const kids = node.children.map((c) => walk(c, node.layout, depth + 1)).join('\n');
     return `${pad}<div class="${cls}"${id}>\n${kids}\n${pad}</div>`;

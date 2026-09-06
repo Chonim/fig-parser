@@ -367,6 +367,58 @@ assert.equal(
   'a text whose width Figma derived from its content can still be cut short by that cache',
 );
 
+// --- an icon's ink has to fit the viewBox that frames it ---
+// Every Icon24 master here is 24×24 and every use of one is 16 or 12, so the paths
+// arrive in 24-space. Declaring a 12-unit viewBox around them draws the icon at twice
+// its size, and since the <svg> is deliberately overflow:visible it spills out of the
+// chip instead of being clipped: the tag chips' check marks hung off the bottom-left.
+const inkOf = (paths) => {
+  let x1 = -Infinity, y1 = -Infinity;
+  for (const p of paths) {
+    // the path carries its place in the cluster as a transform; ignoring it measures
+    // the glyph in its own space and calls a correctly scaled icon oversized
+    const t = (p.transform ?? '').match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+    const [a, b, c, d, e, f] = p.transform?.startsWith('matrix')
+      ? t
+      : [1, 0, 0, 1, t[0] ?? 0, t[1] ?? 0];
+    const nums = (p.d.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number);
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      x1 = Math.max(x1, a * nums[i] + c * nums[i + 1] + e);
+      y1 = Math.max(y1, b * nums[i] + d * nums[i + 1] + f);
+    }
+  }
+  return { x1, y1 };
+};
+let icons = 0;
+const spilling = [];
+for (const frame of frames) {
+  (function walk(n) {
+    if (n.asset?.kind === 'svg') {
+      icons += 1;
+      const [vx, vy, vw, vh] = n.asset.viewBox.split(' ').map(Number);
+      const ink = inkOf(n.asset.paths);
+      // a stroke outline reaches a little past the box by design; 25% is a different
+      // scale — unless the cluster came from a container that crops it, where the ink
+      // is meant to run past the edge and the <svg> cuts it there
+      if (!n.style?.clip && (ink.x1 > vx + vw * 1.25 || ink.y1 > vy + vh * 1.25)) {
+        spilling.push(`${frame.name || frame.id}/${n.name}: ink ${ink.x1.toFixed(0)}×${ink.y1.toFixed(0)} in viewBox ${n.asset.viewBox}`);
+      }
+    }
+    n.children?.forEach(walk);
+  })(toIR(frame, message.blobs, { symbols, variables }));
+}
+assert.ok(icons > 300, `expected many icons, found ${icons}`);
+// and the crop has to actually reach the render, or the silhouette hangs out anyway
+const gnb = frames.find((f) => f.name === 'GnbWrap');
+const gnbHTML = renderHTML(toIR(gnb, message.blobs, { symbols, variables }));
+assert.match(gnbHTML, /<svg[^>]* overflow="hidden"/, 'a cropping cluster renders with its crop dropped');
+assert.match(gnbHTML, /<svg[^>]* overflow="visible"/, 'every icon is now cropped, including the ones that should overflow');
+assert.deepEqual(
+  spilling.slice(0, 4),
+  [],
+  `${spilling.length} of ${icons} icons draw their paths in a bigger space than the viewBox they are given`,
+);
+
 console.log(`ok — ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
   `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames, ` +
   `${authored.length} tokens named from variables, ${catalogue.variables.length} variables in ${catalogue.sets.length} sets`);
