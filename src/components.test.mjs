@@ -140,6 +140,25 @@ const throughWrapper = repeats.find((n) =>
 assert.ok(throughWrapper, 'no repeat was found across a wrapped sibling');
 assert.ok(throughWrapper.layout.repeat.count >= 3, 'repeat below its own threshold');
 
+// --- a component's variant is stated, not left to be guessed from a repeat count ---
+// Three states of one component sat side by side and the only signal was
+// layout.repeat, which reads as a three-column grid: wrong markup, wrong a11y.
+let variants = 0;
+const seenProps = new Set();
+for (const f of frames) {
+  const ir = toIR(f, message.blobs, { symbols, variables });
+  if (!ir) continue;
+  (function walk(n) {
+    if (n.component?.variant) {
+      variants++;
+      for (const k of Object.keys(n.component.variant)) seenProps.add(k);
+    }
+    n.children?.forEach(walk);
+  })(ir);
+}
+assert.ok(variants > 100, `only ${variants} instances report which variant they are`);
+assert.ok(seenProps.has('State'), `no instance reports a State: ${[...seenProps].slice(0, 5)}`);
+
 // --- ids stay unique once instances are expanded ---
 // A copy of a master keeps the master's node ids, so three instances of the same
 // component put three nodes with id 289:287 in one frame and selectNode silently

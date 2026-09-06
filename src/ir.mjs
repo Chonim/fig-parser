@@ -761,6 +761,25 @@ export function symbolIndex(roots) {
  * overrides addressing nodes inside the master by guid path. Expanding it means
  * walking the master's subtree and patching the addressed nodes on the way past.
  */
+/**
+ * A component set names each variant `Prop=Value, Prop=Value`, and variantPropSpecs
+ * carries the same values keyed by an id whose name lives on the parent set. The
+ * name is the readable half and the specs confirm it, so the pairs are taken from
+ * the name and only kept when every value appears in the specs.
+ */
+function variantOf(master) {
+  const pairs = (master.name ?? '').split(',').map((part) => part.split('='));
+  if (pairs.length < 1 || pairs.some((p) => p.length !== 2)) return undefined;
+  const declared = new Set((master.variantPropSpecs ?? []).map((sp) => sp.value));
+  if (!declared.size) return undefined;
+  const variant = {};
+  for (const [k, v] of pairs) {
+    if (!declared.has(v.trim())) return undefined;
+    variant[k.trim()] = v.trim();
+  }
+  return Object.keys(variant).length ? variant : undefined;
+}
+
 function expandInstance(node, symbols) {
   const master = symbols?.get(guidKey(node.symbolData.symbolID));
   if (!master) return undefined;
@@ -794,7 +813,17 @@ export function toIR(node, blobs, options = {}) {
   const { isRoot = true, symbols, variables } = typeof options === 'boolean' ? { isRoot: options } : options;
   if (node.type === 'INSTANCE' && node.symbolData) {
     const expanded = expandInstance(node, symbols);
-    if (expanded) return toIR(expanded, blobs, { isRoot, symbols, variables, instanceOf: node.symbolData.symbolID });
+    if (expanded) {
+      const master = symbols?.get(guidKey(node.symbolData.symbolID));
+      return toIR(expanded, blobs, {
+        isRoot,
+        symbols,
+        variables,
+        instanceOf: node.symbolData.symbolID,
+        variant: master && variantOf(master),
+        masterName: master?.name,
+      });
+    }
   }
   // the rendered root is placed at the origin; kiwi may also omit matrix cells,
   // so fill in identity defaults rather than trusting the struct to be complete
@@ -802,7 +831,13 @@ export function toIR(node, blobs, options = {}) {
   const box = { x: round(t.m02), y: round(t.m12), w: round(node.size?.x ?? 0), h: round(node.size?.y ?? 0) };
   const transform = transformCss(t);
   const base = { id: node.id, name: node.name, box };
-  if (options.instanceOf) base.component = { name: node.name, instanceOf: guidKey(options.instanceOf) };
+  if (options.instanceOf) {
+    base.component = {
+      name: options.masterName ?? node.name,
+      instanceOf: guidKey(options.instanceOf),
+      ...(options.variant ? { variant: options.variant } : {}),
+    };
+  }
   const inParent = flexChild(node);
   if (inParent) base.flexChild = inParent;
   if (transform) {
