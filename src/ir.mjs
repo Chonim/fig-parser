@@ -601,6 +601,18 @@ function repeatHint(kids) {
   return { count: best.length, like: best[0].id, columns, rows };
 }
 
+/** whether the children sit end to end on the main axis, which is what flex can express */
+function tiles(node, kids) {
+  const [axis, size] = node.stackMode === 'HORIZONTAL' ? ['x', 'w'] : ['y', 'h'];
+  const flow = kids.filter((k) => k.role !== 'backdrop' && !k.flexChild?.absolute)
+    .sort((a, b) => a.box[axis] - b.box[axis]);
+  for (let i = 1; i < flow.length; i++) {
+    // half a pixel of slack: adjacent boxes in this file touch at .5 boundaries
+    if (flow[i].box[axis] < flow[i - 1].box[axis] + flow[i - 1].box[size] - 0.5) return false;
+  }
+  return true;
+}
+
 /**
  * What the contents of an auto-layout box reach on its main axis against what the box
  * was given. A designer can drag a fixed-size instance narrower than its contents;
@@ -639,7 +651,12 @@ function overrun(node, kids) {
 function inferLayout(node, kids) {
   if (node.stackMode === 'HORIZONTAL' || node.stackMode === 'VERTICAL') {
     return {
-      mode: 'flex',
+      // Figma calls it auto-layout, but where the children Figma recomputed overlap on
+      // the main axis a flex row cannot reproduce them — flex would push them apart.
+      // Its Buttons lay a filling label across the content box and draw the icons over
+      // the label's ends. The stack settings stay, because they are still the truth
+      // about the design; only the placement falls back to the coordinates.
+      mode: tiles(node, kids) ? 'flex' : 'absolute',
       direction: node.stackMode === 'HORIZONTAL' ? 'row' : 'column',
       gap: round(node.stackSpacing ?? 0),
       // horizontal/vertical padding are the left and top edges; right and bottom

@@ -521,6 +521,21 @@ assert.deepEqual(
   { x: 12, w: 50 },
   'the 74px Button label is not where Figma recomputed it',
 );
+// Those children overlap on the main axis — Figma lays the filling label across the
+// content box and draws the icons over its ends. A flex row cannot reproduce that: it
+// would push them apart. The layout stays reported as auto-layout, with its gap and
+// padding, but positions the children itself.
+for (const b of buttons) {
+  assert.equal(b.layout.mode, 'absolute', 'a row whose children overlap is still being laid out as flex');
+  assert.equal(b.layout.source, 'auto-layout', 'the fact that Figma calls it auto-layout was thrown away');
+  assert.equal(b.layout.gap, 8, 'the stack settings went with it');
+}
+const rows = [];
+(function walk(n) {
+  if (n.layout?.source === 'auto-layout' && n.layout.mode === 'flex') rows.push(n);
+  n.children?.forEach(walk);
+})(toIR(frames.find((f) => f.name === 'GnbWrap'), message.blobs, { symbols, variables }));
+assert.ok(rows.length > 3, `every auto-layout box became absolute; ${rows.length} still flex`);
 
 console.log(`ok — reach ${reach.text}/${reach.textTotal} text, ${reach.slack} slack; ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
   `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames, ` +
