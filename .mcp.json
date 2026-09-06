@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "fig-parser": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["src/mcp.mjs"],
+      "env": {}
+    }
+  }
+}

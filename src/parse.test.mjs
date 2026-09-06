@@ -1,0 +1,66 @@
+import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { parseFigFile, buildTree, decodePathBlob } from './parse.mjs';
+import { toIR } from './ir.mjs';
+import { renderHTML } from './html.mjs';
+
+const SAMPLE = 'samples/kyowon-full.fig';
+if (!existsSync(SAMPLE)) {
+  console.log(`skip — ${SAMPLE} not present`);
+  process.exit(0);
+}
+
+const { version, message } = parseFigFile(SAMPLE);
+assert.equal(message.type, 'NODE_CHANGES');
+assert.ok(version >= 100, `unexpected fig version ${version}`);
+
+// --- tree ---
+const roots = buildTree(message.nodeChanges);
+const count = (list) => list.reduce((n, c) => n + 1 + count(c.children), 0);
+assert.equal(count(roots), message.nodeChanges.length, 'buildTree lost nodes');
+
+const canvas = roots.flatMap((r) => r.children).find((n) => n.type === 'CANVAS');
+const positions = canvas.children.map((c) => c.parentIndex.position);
+assert.deepEqual(positions, [...positions].sort((a, b) => a.localeCompare(b)), 'siblings out of fractional-index order');
+
+// --- path blobs ---
+const geom = message.nodeChanges.find((n) => n.fillGeometry?.length)?.fillGeometry[0];
+const parts = decodePathBlob(message.blobs[geom.commandsBlob].bytes);
+assert.equal(parts[0].cmd, 'M', 'path must open with a moveTo');
+assert.ok(parts.every((p) => 'MLQCZ'.includes(p.cmd)));
+
+// --- IR ---
+const frame = canvas.children.find((c) => c.name === '온라인학습_Login');
+const ir = toIR({ ...frame, transform: { m02: 0, m12: 0 } }, message.blobs);
+assert.equal(ir.role, 'frame');
+assert.deepEqual(ir.box, { x: 0, y: 0, w: 1440, h: 960 });
+
+const flat = [];
+(function walk(n) { flat.push(n); n.children?.forEach(walk); })(ir);
+
+const byRole = (r) => flat.filter((n) => n.role === r);
+assert.ok(byRole('backdrop').length >= 1, 'full-bleed layer not marked as backdrop');
+assert.ok(byRole('text').some((n) => n.text.content === '로그인'), 'login label missing');
+assert.ok(byRole('image').length >= 1, 'no image node');
+
+const icon = byRole('icon').sort((a, b) => b.asset.paths.length - a.asset.paths.length)[0];
+assert.ok(icon?.asset.paths.length > 10, 'logo cluster did not collapse into an SVG');
+assert.ok(icon.asset.paths.every((p) => p.d.startsWith('M')), 'bad path data');
+// paths live in the cluster's own space, so they must fit its viewBox
+const xs = icon.asset.paths.flatMap((p) => (p.transform?.match(/-?[\d.]+/g) ?? [0, 0]).map(Number));
+assert.ok(Math.max(...xs) <= Math.max(icon.box.w, icon.box.h) + 1, 'icon paths escape their viewBox');
+
+const label = byRole('text').find((n) => n.text.content === '로그인');
+assert.equal(label.text.weight, 600, 'SemiBold should map to 600');
+assert.match(label.text.color, /^#[0-9a-f]{6}$/);
+
+// --- HTML ---
+const html = renderHTML(ir);
+assert.ok(html.includes('<svg'), 'no inline svg');
+assert.ok(html.includes('로그인'), 'text content lost');
+assert.equal((html.match(/position: absolute;\n  position: relative;/g) ?? []).length, 0, 'conflicting position rules');
+const openDivs = (html.match(/<div/g) ?? []).length;
+assert.equal(openDivs, (html.match(/<\/div>/g) ?? []).length, 'unbalanced divs');
+
+console.log(`ok — fig v${version}, ${message.nodeChanges.length} nodes, IR ${flat.length} nodes ` +
+  `(${byRole('text').length} text, ${byRole('image').length} image, ${byRole('icon').length} icon), ${html.length} B html`);

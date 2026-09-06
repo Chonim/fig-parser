@@ -1,0 +1,176 @@
+#!/usr/bin/env node
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve, relative, join, isAbsolute } from 'node:path';
+import { parseFigFile, buildTree } from './parse.mjs';
+import { toIR, extractTokens } from './ir.mjs';
+import { renderHTML } from './html.mjs';
+
+const ROOT = resolve(process.env.FIG_ROOT ?? process.cwd());
+
+/** keep .fig reads inside FIG_ROOT — these paths come from the model, not the user */
+function safePath(p) {
+  const full = isAbsolute(p) ? resolve(p) : resolve(ROOT, p);
+  const rel = relative(ROOT, full);
+  if (rel.startsWith('..') || isAbsolute(rel)) throw new Error(`path escapes FIG_ROOT (${ROOT}): ${p}`);
+  return full;
+}
+
+const cache = new Map();
+function load(file) {
+  const path = safePath(file);
+  if (!cache.has(path)) {
+    const doc = parseFigFile(path);
+    const canvases = [];
+    (function collect(list) {
+      for (const n of list) {
+        if (n.type === 'CANVAS') canvases.push(n);
+        else collect(n.children ?? []);
+      }
+    })(buildTree(doc.message.nodeChanges));
+    cache.set(path, { ...doc, path, canvases });
+  }
+  return cache.get(path);
+}
+
+const framesOf = (doc) =>
+  doc.canvases.flatMap((c) => c.children.filter((n) => n.type === 'FRAME').map((f) => ({ ...f, page: c.name })));
+
+function frameIR(file, frame) {
+  const doc = load(file);
+  const found = framesOf(doc).find((f) => f.name === frame || f.id === frame);
+  if (!found) throw new Error(`frame not found: ${frame}\navailable: ${framesOf(doc).map((f) => f.name).join(', ')}`);
+  return { doc, node: found, ir: toIR({ ...found, transform: { m02: 0, m12: 0 } }, doc.message.blobs) };
+}
+
+/**
+ * The renderer wants every bezier; the model wants to know a logo is there.
+ * Strip path data (it dwarfs everything else) and cut off past `depth`.
+ */
+function forModel(node, depth, keepPaths) {
+  const asset = node.asset?.kind === 'svg' && !keepPaths
+    ? { kind: 'svg', viewBox: node.asset.viewBox, pathCount: node.asset.paths.length, note: 'run export_assets to get the .svg file' }
+    : node.asset;
+  const out = { ...node, ...(asset ? { asset } : {}) };
+  if (depth <= 1) return { ...out, children: node.children?.length ? [`… ${node.children.length} children`] : [] };
+  return { ...out, children: (node.children ?? []).map((c) => forModel(c, depth - 1, keepPaths)) };
+}
+
+const svgOf = (node) =>
+  `<svg viewBox="${node.asset.viewBox}" xmlns="http://www.w3.org/2000/svg">` +
+  node.asset.paths
+    .map((p) => `<path d="${p.d}" fill="${p.fill}"${p.transform ? ` transform="${p.transform}"` : ''}${p.rule ? ` fill-rule="${p.rule}"` : ''}/>`)
+    .join('') +
+  '</svg>';
+
+const text = (s) => ({ content: [{ type: 'text', text: typeof s === 'string' ? s : JSON.stringify(s, null, 2) }] });
+const wrap = (fn) => async (args) => {
+  try {
+    return text(await fn(args));
+  } catch (e) {
+    return { ...text(`error: ${e.message}`), isError: true };
+  }
+};
+
+const file = z.string().describe('.fig file path, relative to FIG_ROOT');
+const frame = z.string().describe('frame name or id from list_frames');
+
+const server = new McpServer({ name: 'fig-parser', version: '0.1.0' });
+
+server.registerTool(
+  'list_frames',
+  {
+    title: 'List frames',
+    description: 'Top-level frames in a .fig file: id, page, name, size. Start here — never load a whole file blindly.',
+    inputSchema: { file },
+  },
+  wrap(({ file }) =>
+    framesOf(load(file)).map((f) => ({ id: f.id, page: f.page, name: f.name, w: Math.round(f.size.x), h: Math.round(f.size.y) }))),
+);
+
+server.registerTool(
+  'get_frame',
+  {
+    title: 'Get frame IR',
+    description:
+      'Normalized IR for one frame: role, box, inferred layout, style, text, and assets. ' +
+      'Icon clusters are collapsed into single SVG nodes, so this is 100-200x smaller than the raw node tree. ' +
+      'Use depth to peek at a large frame before pulling all of it.',
+    inputSchema: {
+      file,
+      frame,
+      depth: z.number().int().min(1).optional().describe('max nesting depth, 1 = this node only (default: full tree)'),
+      includePaths: z.boolean().optional().describe('inline raw SVG path data (large; usually you want export_assets instead)'),
+    },
+  },
+  wrap(({ file, frame, depth, includePaths = false }) => forModel(frameIR(file, frame).ir, depth ?? Infinity, includePaths)),
+);
+
+server.registerTool(
+  'get_html',
+  {
+    title: 'Get reference HTML',
+    description:
+      'Render the frame to standalone HTML + CSS straight from the IR. This is the geometric baseline: ' +
+      'pixel-accurate but structurally naive. Use it to check your own markup against, not to ship.',
+    inputSchema: { file, frame, assetDir: z.string().optional().describe('href prefix for images (default: assets)') },
+  },
+  wrap(({ file, frame, assetDir = 'assets' }) => {
+    const { ir } = frameIR(file, frame);
+    return renderHTML(ir, { assetUrl: (h) => `${assetDir}/${h}.png` });
+  }),
+);
+
+server.registerTool(
+  'export_assets',
+  {
+    title: 'Export frame images',
+    description: 'Write the frame\'s raster images (<hash>.png) and collapsed icon clusters (<name>.svg) to outDir, and return the paths.',
+    inputSchema: { file, frame, outDir: z.string().describe('output directory, relative to FIG_ROOT') },
+  },
+  wrap(({ file, frame, outDir }) => {
+    const { doc, ir } = frameIR(file, frame);
+    const dir = safePath(outDir);
+    mkdirSync(dir, { recursive: true });
+    const written = new Map();
+    const slug = (name, n) => `${(name || 'icon').replace(/[^\w가-힣-]+/g, '-').replace(/^-+|-+$/g, '') || 'icon'}-${n}`;
+    (function walk(node) {
+      if (node.asset?.kind === 'image' && !written.has(node.asset.hash)) {
+        const out = join(dir, `${node.asset.hash}.png`);
+        try {
+          writeFileSync(out, doc.readImage(node.asset.hash));
+          written.set(node.asset.hash, relative(ROOT, out));
+        } catch (e) {
+          written.set(node.asset.hash, `FAILED: ${e.message}`);
+        }
+      }
+      if (node.asset?.kind === 'svg') {
+        const key = slug(node.name, written.size);
+        const out = join(dir, `${key}.svg`);
+        writeFileSync(out, svgOf(node));
+        written.set(key, relative(ROOT, out));
+      }
+      node.children?.forEach(walk);
+    })(ir);
+    return Object.fromEntries(written);
+  }),
+);
+
+server.registerTool(
+  'get_tokens',
+  {
+    title: 'Get design tokens',
+    description: 'Colors and text styles used in a frame (or the whole file), deduped and ranked by usage, as CSS custom properties.',
+    inputSchema: { file, frame: frame.optional() },
+  },
+  wrap(({ file, frame }) => {
+    if (frame) return extractTokens(frameIR(file, frame).ir);
+    const doc = load(file);
+    const merged = { role: 'frame', children: framesOf(doc).map((f) => toIR({ ...f, transform: { m02: 0, m12: 0 } }, doc.message.blobs)) };
+    return extractTokens(merged);
+  }),
+);
+
+await server.connect(new StdioServerTransport());

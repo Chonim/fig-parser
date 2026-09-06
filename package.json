@@ -1,0 +1,17 @@
+{
+  "name": "fig-parser",
+  "type": "module",
+  "scripts": {
+    "test": "node src/parse.test.mjs && node src/mcp.test.mjs",
+    "mcp": "node src/mcp.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "fzstd": "^0.1.1",
+    "kiwi-schema": "^0.5.0",
+    "zod": "^4.5.4"
+  },
+  "bin": {
+    "fig-parser-mcp": "src/mcp.mjs"
+  }
+}
