@@ -2,12 +2,13 @@
   "name": "fig-parser",
   "type": "module",
   "scripts": {
-    "test": "node src/parse.test.mjs && node src/components.test.mjs && node src/mcp.test.mjs",
+    "test": "node src/parse.test.mjs && node src/components.test.mjs && node src/mcp.test.mjs && node src/docs.test.mjs",
     "mcp": "node src/mcp.mjs",
     "census": "node src/census.mjs",
     "reach": "node src/reach.mjs",
     "diff": "node src/diff.mjs",
-    "dogfood": "node src/dogfood.mjs"
+    "dogfood": "node src/dogfood.mjs",
+    "docs:worked": "node src/worked-pass.mjs --write"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

@@ -43,12 +43,12 @@
 
 | # | 주장 | 기대 | 담당 | 상태 |
 | --- | --- | --- | --- | --- |
-| B1 | `list_frames(file)` | `2063:280 온라인학습_Login 1440×960`이 있다 | 2-1 | 미검증 |
-| B2 | `get_frame(file, "2063:280")` | 22 노드, 한 번에 다 담긴다 | 2-1 | 미검증 |
-| B3 | `get_tokens(file, "2063:280")` | 색과 텍스트 스타일이 이름과 함께 | 2-1 | 미검증 |
-| B4 | `export_assets(file, "2063:280", "out/login")` | 로고 `.svg`, 아트 `.png` | 2-1 | 미검증 |
-| B5 | `find_nodes(file, "Products", frame: "97:3081")` | id + 조상 + box, 한 번에 | 2-1 | 미검증 |
-| B6 | `get_frame(file, "97:3081", select: <id>)` | 그 서브트리 | 2-1 | 미검증 |
+| B1 | `list_frames(file)` | `2063:280 온라인학습_Login 1440×960`이 있다 | 2-1 | 검증(docs.test: 블록 생성 대조) |
+| B2 | `get_frame(file, "2063:280")` | 22 노드, 한 번에 다 담긴다 | 2-1 | 검증(docs.test) |
+| B3 | `get_tokens(file, "2063:280")` | 색 16 · 텍스트 스타일 3 | 2-1 | 검증(docs.test) |
+| B4 | `export_assets(...)` | 5개 파일, `.png` `.svg` | 2-1 | 검증(docs.test) |
+| B5 | `find_nodes(file, "Products", frame: "97:3081")` | id + 조상 + box, 한 번에 | 2-1 | 검증(docs.test) |
+| B6 | `get_frame(file, "97:3081", select: <id>)` | 그 서브트리 | 2-1 | 검증(docs.test) |
 
 ## C. 도구 파라미터 — 7개 도구
 
@@ -119,10 +119,10 @@ README:92–103 표와 `src/mcp.mjs`의 `describe()` 문자열. **모델이 읽�
 
 | # | 주장 | 담당 | 상태 |
 | --- | --- | --- | --- |
-| F1 | `docs/gnb-from-ir.html`이 있다 | 2-2 | 미검증 |
-| F2 | `REFS.md`가 있다 | 2-2 | 미검증 |
-| F3 | `refs/<sample>/<frameId>.png` — **없는 것이 정상**이고 문서가 그렇게 말한다 | 2-2 | 미검증 |
-| F4 | `samples/*.fig`는 gitignore | 2-2 | 미검증 |
+| F1 | `docs/gnb-from-ir.html`이 있다 | 2-2 | 검증(docs.test) |
+| F2 | `REFS.md`가 있다 | 2-2 | 검증(docs.test) |
+| F3 | `refs/<sample>/<frameId>.png` — **없는 것이 정상**이고 문서가 그렇게 말한다 | 2-2 | 검증(docs.test: 없으면 문서가 그렇게 말하는지) |
+| F4 | `samples/*.fig`는 gitignore | 2-2 | 검증(docs.test) |
 
 ---
 
