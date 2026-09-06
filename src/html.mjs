@@ -54,11 +54,6 @@ function className(node, seen) {
   return name;
 }
 
-/** a derived text box too small for one line of the node's own font never got re-laid out */
-const staleTextBox = (node) =>
-  node.role === 'text' && node.text.autoSize
-  && node.box.h < node.text.size * node.text.content.split('\n').length * 0.8;
-
 function boxRules(node, parentLayout) {
   const rules = [];
   const positioned = node.role === 'backdrop' || parentLayout?.mode === 'absolute' || node.flexChild?.absolute;
@@ -75,14 +70,15 @@ function boxRules(node, parentLayout) {
   // re-lays auto-sized text out when it opens the file, so that box is a number
   // nobody ever rendered — honouring it put a 128px headline in a 62px slot and ran
   // it a thousand pixels past its frame. Four such nodes across the two samples.
-  if (staleTextBox(node)) {
-    // max-content, not just an absent width: as a flex item the element would otherwise
-    // be squeezed back to the parent's width and, being nowrap, spill out of it anyway
-    if (node.text.autoSize === 'both') rules.push(['width', 'max-content']);
-    else rules.push(['width', px(node.box.w)]);
-    return rules;
-  }
   rules.push(['width', px(node.box.w)], ['height', px(node.box.h)]);
+  // On the axes textAutoResize names, the stored box is Figma's cache of the content,
+  // and in these files the cache is wrong in both directions: an instance whose font
+  // was overridden outgrew the master's copy (16px Inter in a 29px slot), while other
+  // boxes sit far larger than the text inside them. Figma's own measurement is the
+  // better number wherever it holds — it was taken with the real font — so the box
+  // keeps it and only refuses to be smaller than what it contains.
+  if (node.text?.autoSize === 'both') rules.push(['min-width', 'max-content']);
+  if (node.text?.autoSize) rules.push(['min-height', 'max-content']);
   return rules;
 }
 

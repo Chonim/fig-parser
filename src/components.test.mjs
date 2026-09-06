@@ -343,13 +343,29 @@ assert.ok(introIR && stale.some((n) => n.text.autoSize === 'both'), 'no width-an
 
 const introHTML = renderHTML(introIR);
 for (const n of stale) {
-  const cls = introHTML.match(new RegExp(`\\.([\\w가-힣-]+) \\{[^}]*?\\}`, 'g'))
-    ?.find((b) => b.includes(`height: ${n.box.h}px`) && b.includes(`font-size: ${n.text.size}px`));
-  assert.ok(
-    !cls,
-    `"${n.text.content.slice(0, 20)}" still renders a ${n.box.h}px box around ${n.text.size}px text, which cannot hold one line`,
+  const block = introHTML.match(new RegExp(`\\.[\\w가-힣-]+ \\{[^}]*font-size: ${n.text.size}px[^}]*\\}`, 'g'))
+    ?.find((b) => b.includes(`height: ${n.box.h}px`));
+  assert.ok(block, `no rule renders "${n.text.content.slice(0, 16)}" at all`);
+  assert.match(
+    block,
+    /min-height: max-content/,
+    `"${n.text.content.slice(0, 16)}" is pinned to a ${n.box.h}px box around ${n.text.size}px text, which cannot hold one line`,
   );
 }
+// the same guard on the other axis, where an overridden font outgrew the master's cache
+const fieldIR = toIR(frames.find((f) => f.name === 'Input Field'), message.blobs, { symbols, variables });
+const fieldHTML = renderHTML(fieldIR);
+let autoWidths = 0;
+(function walk(n) {
+  if (n.text?.autoSize === 'both') autoWidths += 1;
+  n.children?.forEach(walk);
+})(fieldIR);
+assert.ok(autoWidths > 20, `expected auto-width texts on Input Field, found ${autoWidths}`);
+assert.equal(
+  (fieldHTML.match(/min-width: max-content/g) ?? []).length,
+  autoWidths,
+  'a text whose width Figma derived from its content can still be cut short by that cache',
+);
 
 console.log(`ok — ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
   `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames, ` +
