@@ -589,6 +589,22 @@ if (columnHug.length) {
   assert.match(html, /min-width: \d/, 'a column that hugs its width got no floor');
 }
 
+// --- strokeAlign CENTER is approximated, and the count says how much is riding on it ---
+// A centred stroke straddles the edge, which CSS has no border for. Every one of these
+// is 1px wide, so the approximation is half a pixel on each side — but the count was
+// written down as 1 when instance expansion was hiding most of them, and a decision to
+// leave it alone is only worth anything if the number under it is real.
+let centred = 0, centredWeights = new Set();
+for (const frame of frames) {
+  (function walk(n) {
+    const b = n.style?.border;
+    if (b?.align === 'CENTER' && b.css) { centred += 1; centredWeights.add(b.css.match(/^([\d.]+)px/)?.[1]); }
+    n.children?.forEach(walk);
+  })(toIR(frame, message.blobs, { symbols, variables }));
+}
+assert.ok(centred >= 110, `centred strokes fell to ${centred}, was 110 — recount before trusting the decision to skip them`);
+assert.deepEqual([...centredWeights], ['1'], 'a centred stroke is no longer 1px, so the half-pixel argument no longer holds');
+
 console.log(`ok — reach ${reach.text}/${reach.textTotal} text, ${reach.slack} slack; ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
   `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames, ` +
   `${authored.length} tokens named from variables, ${catalogue.variables.length} variables in ${catalogue.sets.length} sets`);
