@@ -1,3 +1,14 @@
+import { asImageLayer } from './ir.mjs';
+
+/** Figma image scale modes as CSS background sizing */
+const backgroundFit = (mode) => {
+  if (mode === 'TILE') return [['background-repeat', 'repeat']];
+  const size = { FIT: 'contain', STRETCH: '100% 100%' }[mode] ?? 'cover';
+  return [['background-size', size], ['background-position', 'center'], ['background-repeat', 'no-repeat']];
+};
+
+const OBJECT_FIT = { FIT: 'contain', STRETCH: 'fill', TILE: 'none' };
+
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const px = (v) => `${v}px`;
 
@@ -27,16 +38,25 @@ function boxRules(node, parentLayout) {
 function styleRules(node, parentLayout, assetUrl) {
   const rules = boxRules(node, parentLayout);
   const s = node.style ?? {};
-  if (s.fill) rules.push(['background', s.fill]);
+  if (s.fill && !s.border?.image) rules.push(['background', s.fill]);
   if (node.asset?.kind === 'image' && node.role !== 'image') {
-    rules.push(['background-image', `url(${assetUrl(node.asset.hash)})`], ['background-size', 'cover'], ['background-position', 'center']);
+    rules.push(['background-image', `url(${assetUrl(node.asset.hash)})`], ...backgroundFit(node.asset.scaleMode));
   }
   if (s.radius) rules.push(['border-radius', s.radius]);
-  if (s.border) rules.push(['border', s.border], ['box-sizing', 'border-box']);
+  if (s.border?.css) rules.push(['border', s.border.css], ['box-sizing', 'border-box']);
+  if (s.border?.image) {
+    // fill clipped to the padding box, stroke gradient to the border box
+    const layers = [s.fill && `${asImageLayer(s.fill)} padding-box`, `${s.border.image} border-box`].filter(Boolean);
+    rules.push(['background', layers.join(', ')], ['border', `${s.border.width}px solid transparent`], ['box-sizing', 'border-box']);
+  }
   if (s.shadow) rules.push(['box-shadow', s.shadow]);
   if (s.opacity != null && s.opacity < 1) rules.push(['opacity', String(s.opacity)]);
   // Figma rotates about the top-left of the unrotated box, unlike CSS's default centre
   if (node.box.transform) rules.push(['transform', node.box.transform], ['transform-origin', '0 0']);
+
+  if (node.role === 'image') {
+    rules.push(['object-fit', OBJECT_FIT[node.asset.scaleMode] ?? 'cover']);
+  }
 
   if (node.role === 'text') {
     const t = node.text;
@@ -75,10 +95,11 @@ export function renderHTML(root, { assetUrl = (h) => `assets/${h}.png`, title = 
     if (node.role === 'text') return `${pad}<p class="${cls}">${esc(node.text.content)}</p>`;
     if (node.role === 'image') return `${pad}<img class="${cls}" src="${assetUrl(node.asset.hash)}" alt="${esc(node.name)}">`;
     if (node.role === 'icon') {
+      const defs = node.asset.defs ? `<defs>${node.asset.defs.join('')}</defs>` : '';
       const paths = node.asset.paths
         .map((p) => `<path d="${p.d}" fill="${p.fill}"${p.transform ? ` transform="${p.transform}"` : ''}${p.rule ? ` fill-rule="${p.rule}"` : ''}/>`)
         .join('');
-      return `${pad}<svg class="${cls}" viewBox="${node.asset.viewBox}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(node.name)}">${paths}</svg>`;
+      return `${pad}<svg class="${cls}" viewBox="${node.asset.viewBox}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${esc(node.name)}">${defs}${paths}</svg>`;
     }
     const kids = node.children.map((c) => walk(c, node.layout, depth + 1)).join('\n');
     return `${pad}<div class="${cls}">\n${kids}\n${pad}</div>`;

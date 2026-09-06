@@ -60,6 +60,7 @@ function forModel(node, depth, keepPaths) {
 
 const svgOf = (node) =>
   `<svg viewBox="${node.asset.viewBox}" xmlns="http://www.w3.org/2000/svg">` +
+  (node.asset.defs ? `<defs>${node.asset.defs.join('')}</defs>` : '') +
   node.asset.paths
     .map((p) => `<path d="${p.d}" fill="${p.fill}"${p.transform ? ` transform="${p.transform}"` : ''}${p.rule ? ` fill-rule="${p.rule}"` : ''}/>`)
     .join('') +

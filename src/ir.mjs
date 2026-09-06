@@ -25,10 +25,10 @@ const VECTOR_TYPES = new Set(['VECTOR', 'BOOLEAN_OPERATION', 'LINE', 'STAR', 'RE
 export const HANDLED = {
   nodeTypes: new Set([...VECTOR_TYPES, 'DOCUMENT', 'CANVAS', 'FRAME', 'GROUP', 'TEXT', 'RECTANGLE', 'ROUNDED_RECTANGLE', 'ELLIPSE']),
   fillPaints: { handled: new Set(['SOLID', 'GRADIENT_LINEAR', 'IMAGE']), approximated: new Set(['GRADIENT_RADIAL', 'GRADIENT_ANGULAR', 'GRADIENT_DIAMOND']) },
-  strokePaints: { handled: new Set(['SOLID']), approximated: new Set() },
+  strokePaints: { handled: new Set(['SOLID', 'GRADIENT_LINEAR']), approximated: new Set(['GRADIENT_RADIAL', 'GRADIENT_ANGULAR', 'GRADIENT_DIAMOND']) },
   effects: { handled: new Set(['DROP_SHADOW']), approximated: new Set() },
   blendModes: new Set(['NORMAL', 'PASS_THROUGH']),
-  imageScaleModes: new Set(['FILL']),
+  imageScaleModes: new Set(['FILL', 'FIT', 'STRETCH', 'TILE']),
 };
 const WEIGHTS = { Thin: 100, ExtraLight: 200, Light: 300, Regular: 400, Medium: 500, SemiBold: 600, Bold: 700, ExtraBold: 800, Black: 900 };
 
@@ -129,15 +129,18 @@ function linearGradient(paint, size) {
   return `linear-gradient(${deg}deg, ${stopList(paint)})`;
 }
 
-/** any visible fill as a CSS background value: solid, linear gradient, or a radial approximation */
-function fillOf(node) {
-  const paint = node.fillPaints?.find((p) => p.visible !== false && p.type !== 'IMAGE');
-  if (!paint) return undefined;
+/** one paint as a CSS value: solid colour, linear gradient, or a radial approximation */
+function paintCss(paint, size) {
   if (paint.type === 'SOLID') return cssColor(paint.color, paint.opacity ?? 1);
-  if (paint.type === 'GRADIENT_LINEAR') return linearGradient(paint, node.size);
+  if (paint.type === 'GRADIENT_LINEAR') return linearGradient(paint, size);
   if (paint.type?.startsWith('GRADIENT')) return `radial-gradient(circle, ${stopList(paint)})`;
   return undefined;
 }
+
+const fillOf = (node) => {
+  const paint = node.fillPaints?.find((p) => p.visible !== false && p.type !== 'IMAGE');
+  return paint && paintCss(paint, node.size);
+};
 
 function imageFill(node) {
   const paint = node.fillPaints?.find((p) => p.visible !== false && p.type === 'IMAGE' && p.image?.hash);
@@ -145,10 +148,18 @@ function imageFill(node) {
 }
 
 function border(node) {
-  const paint = node.strokePaints?.find((p) => p.visible !== false && p.type === 'SOLID');
+  const paint = node.strokePaints?.find((p) => p.visible !== false);
   if (!paint) return undefined;
-  return `${round(node.strokeWeight ?? 1)}px solid ${cssColor(paint.color, paint.opacity ?? 1)}`;
+  const width = round(node.strokeWeight ?? 1);
+  if (paint.type === 'SOLID') return { css: `${width}px solid ${cssColor(paint.color, paint.opacity ?? 1)}` };
+  // a gradient cannot go in `border`, so the renderer paints it as a border-box
+  // background layer under a transparent border — which keeps border-radius working
+  const image = paintCss(paint, node.size);
+  return image && { width, image };
 }
+
+/** wrap a solid colour so it can sit in `background` next to real gradient layers */
+export const asImageLayer = (fill) => (fill?.startsWith('#') || fill?.startsWith('rgba') ? `linear-gradient(${fill}, ${fill})` : fill);
 
 function shadow(node) {
   const effects = (node.effects ?? []).filter((e) => e.visible !== false && e.type === 'DROP_SHADOW');
@@ -196,12 +207,33 @@ export function isIconCluster(node) {
   return node.children.every(isIconCluster);
 }
 
-const strokeColor = (node) => {
-  const paint = node.strokePaints?.find((p) => p.visible !== false && p.type === 'SOLID');
-  return paint && cssColor(paint.color, paint.opacity ?? 1);
-};
+/**
+ * SVG cannot take a CSS gradient string, so a gradient inside an icon cluster has to
+ * become a <defs> entry the path references by id.
+ */
+function svgPaint(paint, defs) {
+  if (!paint) return undefined;
+  if (paint.type === 'SOLID') return cssColor(paint.color, paint.opacity ?? 1);
+  if (!paint.stops?.length) return undefined;
+  const id = `g${defs.length}`;
+  const stops = paint.stops
+    .map((st) => `<stop offset="${round(st.position * 100)}%" stop-color="${cssColor(st.color)}"${(st.color.a ?? 1) < 1 ? ` stop-opacity="${round(st.color.a)}"` : ''}/>`)
+    .join('');
+  // gradient space runs (0,0)->(1,0); invert the transform to place it on the shape
+  const m = paint.transform ? matInv(paint.transform) : IDENTITY;
+  const at = (x, y) => ({ x: num(m.m00 * x + m.m01 * y + m.m02), y: num(m.m10 * x + m.m11 * y + m.m12) });
+  const a = at(0, 0);
+  const b = at(1, 0);
+  const shape = paint.type === 'GRADIENT_LINEAR'
+    ? `<linearGradient id="${id}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}">${stops}</linearGradient>`
+    : `<radialGradient id="${id}">${stops}</radialGradient>`;
+  defs.push(shape);
+  return `url(#${id})`;
+}
 
-function collectPaths(node, blobs, parent, out) {
+const visiblePaint = (list) => list?.find((p) => p.visible !== false && p.type !== 'IMAGE');
+
+function collectPaths(node, blobs, parent, out, defs) {
   const m = matMul(parent, node.transform ?? IDENTITY);
   const transform = isIdentity(m)
     ? (m.m02 || m.m12 ? `translate(${round(m.m02)} ${round(m.m12)})` : undefined)
@@ -211,8 +243,8 @@ function collectPaths(node, blobs, parent, out) {
   // are painted the same way — only the paint they take differs.
   const geometries = [
     // no paint at all -> the shape is a bounds/mask helper, not ink
-    [node.fillGeometry, solidFill(node) ?? (node.fillPaints?.some((f) => f.visible !== false) ? 'currentColor' : 'none')],
-    [node.strokeGeometry, strokeColor(node) ?? 'none'],
+    [node.fillGeometry, svgPaint(visiblePaint(node.fillPaints), defs) ?? (node.fillPaints?.some((f) => f.visible !== false) ? 'currentColor' : 'none')],
+    [node.strokeGeometry, svgPaint(visiblePaint(node.strokePaints), defs) ?? 'none'],
   ];
 
   for (const [list, fill] of geometries) {
@@ -232,7 +264,7 @@ function collectPaths(node, blobs, parent, out) {
       }
     }
   }
-  for (const child of node.children ?? []) collectPaths(child, blobs, m, out);
+  for (const child of node.children ?? []) collectPaths(child, blobs, m, out, defs);
 }
 
 /**
@@ -315,10 +347,13 @@ export function toIR(node, blobs, isRoot = true) {
 
   if (isIconCluster(node)) {
     const paths = [];
+    const defs = [];
     // paths are collected in the cluster's own coordinate space, so cancel its transform
-    collectPaths(node, blobs, matInv(node.transform ?? IDENTITY), paths);
+    collectPaths(node, blobs, matInv(node.transform ?? IDENTITY), paths, defs);
     if (!paths.length) return null;
-    return { ...base, role: 'icon', asset: { kind: 'svg', viewBox: `0 0 ${box.w} ${box.h}`, paths }, style: { opacity: node.opacity ?? 1 }, children: [] };
+    const asset = { kind: 'svg', viewBox: `0 0 ${box.w} ${box.h}`, paths };
+    if (defs.length) asset.defs = defs;
+    return { ...base, role: 'icon', asset, style: { opacity: node.opacity ?? 1 }, children: [] };
   }
 
   const image = imageFill(node);
