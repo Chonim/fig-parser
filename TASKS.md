@@ -72,9 +72,20 @@ CSS에서 무효지만 IR에는 남아 있고, 반응형 마크업을 쓸 모델
 FLOAT는 px(단, weight/opacity/line-height는 무단위), 별칭은 `var(--원본)`으로 유지.
 모드는 세트별로 `:root` + `[data-<set>="<mode>"]` 블록.
 
-남은 것: 변수 바인딩이 **색에만** 붙어 있다. `radius`/`gap`/`padding`처럼 FLOAT 변수가
-바인딩된 속성은 IR에서 여전히 리터럴 값으로 나온다. 노드 쪽 바인딩 필드를 찾아
-`style.radius`를 `var(--radius-md)`로 낼 수 있으면 마크업 품질이 한 단계 오른다.
+바인딩은 fill/stroke/아이콘 path 전부에서 읽는다 (matsq 127프레임 기준 색 1162개 중 808개가
+원본 이름을 얻고, 그중 63개는 stroke·아이콘 경로로만 도달 가능하다).
+
+**FLOAT 바인딩은 두 샘플에 존재하지 않는다.** 노드를 전수 조사했으나 `*Var` 필드는
+`fillPaints.colorVar` / `strokePaints.colorVar` / `stopsVar`뿐이고, `stopsVar`는 리터럴 값만
+담고 별칭이 없다. `radius`/`gap`이 변수에 묶인 파일이 생기면 그때 매핑할 것.
+
+### 폰트 — 완료
+프레임이 실제로 쓰는 패밀리·굵기로 Google Fonts 링크를 생성한다.
+Pretendard만 jsdelivr로 예외 처리.
+
+주의: css2 요청에 그 패밀리가 발행하지 않는 굵기만 들어가면 **요청 전체가 400**이 되어
+폰트가 통째로 죽는다 (Lato에는 600이 없다). 그래서 항상 400을 포함시킨다.
+두 샘플의 모든 프레임에서 생성된 URL 16개를 curl로 확인해 전부 200.
 
 ### 미처리 노드 타입
 `STICKY` `WIDGET` `CONNECTOR` `SHAPE_WITH_TEXT` `STAMP` — matsq에 소량 존재.

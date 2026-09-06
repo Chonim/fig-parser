@@ -101,6 +101,19 @@ const notification = frames.find((f) => f.name === 'Notification');
 const notifCss = renderHTML(toIR(notification, message.blobs, { symbols, variables }));
 assert.match(notifCss, /display: flex/, 'auto-layout never reached the CSS');
 
+// --- fonts: this library is set in Inter and Lato, neither of which was ever linked ---
+const hrefs = new Set();
+for (const f of frames) {
+  const html = renderHTML(toIR(f, message.blobs, { symbols, variables }));
+  for (const m of html.matchAll(/href="([^"]+)"/g)) hrefs.add(m[1]);
+}
+const google = [...hrefs].filter((h) => h.includes('fonts.googleapis.com'));
+assert.ok(google.length >= 3, `expected several font families to be linked, got ${google.length}`);
+assert.ok(google.some((h) => h.includes('family=Inter')), 'Inter was never linked');
+// Lato publishes no 600; a request naming only weights it lacks returns 400 and
+// drops the whole family, so every request has to include 400 as a floor
+assert.ok(google.every((h) => /wght@(400|400;)/.test(h)), 'a font request omitted weight 400');
+
 console.log(`ok — ${symbols.size} masters, ${frames.length} frames (${frames.length - topLevel.length} inside sections), ` +
   `${components.length} instances expanded in Tag-solid, ${auto.length} auto-layout frames, ` +
   `${authored.length} tokens named from variables, ${catalogue.variables.length} variables in ${catalogue.sets.length} sets`);

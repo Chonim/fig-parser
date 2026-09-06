@@ -116,18 +116,31 @@ function styleRules(node, parentLayout, assetUrl) {
   return rules;
 }
 
-const FONT_LINKS = {
-  Pretendard: 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css',
-  'Noto Sans KR': 'https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&display=swap',
-};
+// Google Fonts covers most design libraries; Pretendard is not on it
+const FONT_OVERRIDES = { Pretendard: 'https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css' };
+
+/**
+ * Ask for the weights the frame uses, plus 400. A css2 request in which no named
+ * weight exists for that family fails outright — Lato publishes no 600, so a lone
+ * :wght@600 takes the whole font down — and 400 is the one weight always there.
+ */
+const fontHref = (family, weights) =>
+  FONT_OVERRIDES[family]
+  ?? `https://fonts.googleapis.com/css2?family=${family.replace(/ /g, '+')}`
+     + `:wght@${[...new Set([400, ...weights])].sort((a, b) => a - b).join(';')}&display=swap`;
 
 export function renderHTML(root, { assetUrl = (h) => `assets/${h}.png`, title = root.name } = {}) {
   const sheet = [];
   const seen = new Map();
-  const families = new Set();
+  const families = new Map();
   (function collectFonts(n) {
-    if (n.text?.family) families.add(n.text.family);
-    for (const run of n.text?.runs ?? []) if (run.family) families.add(run.family);
+    const note = (family, weight) => {
+      if (!family) return;
+      if (!families.has(family)) families.set(family, new Set());
+      families.get(family).add(weight ?? 400);
+    };
+    note(n.text?.family, n.text?.weight);
+    for (const run of n.text?.runs ?? []) note(run.family ?? n.text?.family, run.weight ?? n.text?.weight);
     n.children?.forEach(collectFonts);
   })(root);
 
@@ -157,7 +170,7 @@ export function renderHTML(root, { assetUrl = (h) => `assets/${h}.png`, title = 
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
-${[...families].map((f) => FONT_LINKS[f]).filter(Boolean).map((href) => `<link rel="stylesheet" href="${href}">`).join('\n')}
+${[...families].map(([f, w]) => `<link rel="stylesheet" href="${fontHref(f, w)}">`).join('\n')}
 <style>
 * { margin: 0; padding: 0; }
 body { background: #f4f4f4; display: flex; justify-content: center; }
