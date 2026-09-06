@@ -337,12 +337,18 @@ const html = renderHTML(ir);
 assert.ok(html.includes('<svg'), 'no inline svg');
 assert.ok(html.includes('로그인'), 'text content lost');
 assert.equal((html.match(/position: absolute;\n  position: relative;/g) ?? []).length, 0, 'conflicting position rules');
-// a class starting with a digit is not a valid CSS identifier: the rule is parsed
-// away and every declaration for that node silently disappears
+// A class starting with a digit is not a valid CSS identifier: the rule is parsed
+// away and every declaration for that node silently disappears. A class emitted
+// twice is worse — both nodes get whichever rule came last.
 for (const frame of collectFrames(roots)) {
   const page = renderHTML(toIR(frame, message.blobs));
-  const bad = [...page.matchAll(/^\.([^\s{]+)/gm)].map((m) => m[1]).filter((c) => /^[0-9-]/.test(c));
+  const selectors = [...page.matchAll(/^\.([^\s{]+)/gm)].map((m) => m[1]);
+  const bad = selectors.filter((c) => /^[0-9-]/.test(c));
   assert.equal(bad.length, 0, `invalid CSS class selectors in ${frame.name}: ${bad.slice(0, 3)}`);
+  const counts = new Map();
+  for (const c of selectors) counts.set(c, (counts.get(c) ?? 0) + 1);
+  const repeated = [...counts].filter(([, n]) => n > 1).map(([c]) => c);
+  assert.equal(repeated.length, 0, `class selectors emitted twice in ${frame.name}: ${repeated.slice(0, 3)}`);
 }
 
 const openDivs = (html.match(/<div/g) ?? []).length;

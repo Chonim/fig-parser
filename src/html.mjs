@@ -38,9 +38,14 @@ function className(node, seen) {
   // a CSS identifier may not start with a digit: `.2026-01-01` silently matches
   // nothing, and every rule written for that node is dropped
   const safe = /^[a-z_\u00a0-\uffff]/i.test(base) ? base : `n${base}`;
-  const n = (seen.get(safe) ?? 0) + 1;
-  seen.set(safe, n);
-  return n === 1 ? safe : `${safe}-${n}`;
+  // Reserving only the unsuffixed base let the tenth `Vector` mint `vector-10`,
+  // which a layer actually called `Vector 10` then claimed as well — one selector,
+  // two rules, and the later one won for both elements. Every name handed out is
+  // reserved, and a suffix keeps counting until it lands on a free one.
+  let name = safe;
+  for (let n = 2; seen.has(name); n++) name = `${safe}-${n}`;
+  seen.add(name);
+  return name;
 }
 
 function boxRules(node, parentLayout) {
@@ -134,7 +139,7 @@ const fontHref = (family, weights) =>
 
 export function renderHTML(root, { assetUrl = (h) => `assets/${h}.png`, title = root.name } = {}) {
   const sheet = [];
-  const seen = new Map();
+  const seen = new Set();
   const families = new Map();
   (function collectFonts(n) {
     const note = (family, weight) => {
